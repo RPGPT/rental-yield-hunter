@@ -26,17 +26,17 @@ postgresql://neondb_owner:abc123xyz@ep-cool-name-12345.eu-west-1.aws.neon.tech/n
 
 ## Step 3: Run the Workflow
 
-The pipeline is already configured in `.github/workflows/scrape.yml`. It does two things:
+The pipelines are configured in `.github/workflows/`:
 
-| Job | What it does |
-|---|---|
-| `test` | Spins up a throwaway Postgres, runs migrations, runs pytest |
-| `scrape` | Connects to your Neon DB, runs migrations, scrapes imovirtual |
+| Workflow | File | Triggers | What it does |
+|---|---|---|---|
+| **Test** | `test.yml` | PRs, manual | Throwaway Postgres, migrations, pytest |
+| **Scrape** | `scrape.yml` | Daily 08:00 UTC, manual | Neon DB, migrations, scrape imovirtual |
 
-### Trigger it manually (first time)
+### Trigger scrape manually (first time)
 
 1. Go to **Actions** tab in your repo
-2. Click **Scrape & Test** in the left sidebar
+2. Click **Scrape** in the left sidebar
 3. Click **Run workflow** → **Run workflow**
 
 ### Automatic schedule
