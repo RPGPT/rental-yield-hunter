@@ -151,6 +151,8 @@ activemq-data/
 .env
 .envrc
 .venv
+.browser_cookies.json
+.browser_profile/
 env/
 venv/
 ENV/
@@ -216,3 +218,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+logs/
+scrape*.log
+.idea/

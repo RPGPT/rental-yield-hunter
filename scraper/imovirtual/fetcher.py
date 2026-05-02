@@ -1,0 +1,109 @@
+import json
+import logging
+import time
+from typing import Optional, List
+
+from curl_cffi import requests as curl_requests
+
+from config import MAX_PRICE, REQUEST_DELAY
+
+logger = logging.getLogger(__name__)
+
+BASE_URL = "https://www.imovirtual.com/comprar/apartamento/porto/"
+API_PATH = "pt/resultados/comprar/apartamento/porto/porto.json"
+SORT_PARAMS = "by=PRICE&direction=ASC"
+
+
+def _extract_next_data(html: str) -> Optional[dict]:
+    marker = 'id="__NEXT_DATA__"'
+    start = html.find(marker)
+    if start == -1:
+        return None
+    json_start = html.find(">", start) + 1
+    json_end = html.find("</script>", json_start)
+    return json.loads(html[json_start:json_end])
+
+
+def _get_build_id(session) -> Optional[str]:
+    resp = session.get(
+        BASE_URL,
+        headers={"Accept": "text/html", "Accept-Language": "pt-PT,pt;q=0.9"},
+    )
+    if resp.status_code != 200:
+        logger.error("HTML page returned status %d", resp.status_code)
+        return None
+
+    data = _extract_next_data(resp.text)
+    build_id = data.get("buildId") if data else None
+
+    if not build_id:
+        logger.error("Could not extract buildId")
+        return None
+
+    logger.info("buildId: %s", build_id)
+    return build_id
+
+
+def _fetch_page(session, build_id: str, page: int) -> Optional[dict]:
+    url = f"https://www.imovirtual.com/_next/data/{build_id}/{API_PATH}?page={page}&{SORT_PARAMS}"
+    resp = session.get(url, headers={
+        "Accept": "application/json",
+        "Accept-Language": "pt-PT,pt;q=0.9",
+        "Referer": BASE_URL,
+        "x-nextjs-data": "1",
+    })
+
+    if resp.status_code != 200:
+        logger.error("Page %d returned status %d", page, resp.status_code)
+        return None
+
+    return resp.json().get("pageProps", {}).get("data", {}).get("searchAds")
+
+
+def _min_price(items: list) -> Optional[int]:
+    for item in items:
+        value = (item.get("totalPrice") or {}).get("value")
+        if value is not None:
+            return int(value)
+    return None
+
+
+def fetch() -> List[dict]:
+    session = curl_requests.Session(impersonate="chrome")
+
+    build_id = _get_build_id(session)
+    if not build_id:
+        return []
+
+    responses = []
+    page = 0
+
+    while True:
+        page += 1
+        search_data = _fetch_page(session, build_id, page)
+        if not search_data:
+            break
+
+        items = search_data.get("items", [])
+        pagination = search_data.get("pagination", {})
+        total_pages = pagination.get("totalPages", 0)
+        total_items = pagination.get("totalItems", 0)
+        cheapest = _min_price(items)
+
+        responses.append(search_data)
+        logger.info(
+            "Page %d/%d: %d listings (total: %d, min: %s)",
+            page, total_pages, len(items), total_items,
+            f"{cheapest}€" if cheapest else "?",
+        )
+
+        if cheapest and cheapest > MAX_PRICE:
+            logger.info("Passed %d€ ceiling — stopping", MAX_PRICE)
+            break
+
+        if page >= total_pages or not items:
+            break
+
+        time.sleep(REQUEST_DELAY)
+
+    return responses

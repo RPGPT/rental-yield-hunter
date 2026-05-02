@@ -1,0 +1,9 @@
+curl_cffi
+beautifulsoup4
+lxml
+psycopg2-binary
+python-dotenv
+sqlalchemy
+alembic
+pytest
+testcontainers[postgres]
