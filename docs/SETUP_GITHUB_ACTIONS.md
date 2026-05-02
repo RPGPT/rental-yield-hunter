@@ -5,7 +5,7 @@
 1. Go to [neon.tech](https://neon.tech) and sign up with your GitHub account
 2. Click **Create Project**
    - Name: `rental-yield-hunter`
-   - Postgres version: `16`
+   - Postgres version: `18`
    - Region: pick the closest to you (e.g. `EU West - Frankfurt`)
 3. Once created, copy the **connection string** from the dashboard. It looks like:
 
