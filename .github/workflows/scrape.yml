@@ -4,6 +4,14 @@ on:
   schedule:
     - cron: "0 8 * * *"
   workflow_dispatch:
+    inputs:
+      source:
+        description: "Scraper source"
+        required: true
+        default: "imovirtual"
+        type: choice
+        options:
+          - imovirtual
 
 jobs:
   scrape:
@@ -25,4 +33,4 @@ jobs:
 
       - run: python -m alembic upgrade head
 
-      - run: python main.py --source imovirtual
+      - run: python main.py --source ${{ inputs.source || 'imovirtual' }}
