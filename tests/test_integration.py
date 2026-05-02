@@ -1,10 +1,3 @@
-"""
-Full pipeline integration tests.
-
-Spins up a temporary Postgres (via testcontainers), mocks the HTTP layer,
-runs the complete scraper pipeline, and asserts DB state.
-"""
-import json
 from unittest.mock import MagicMock, patch
 
 from db.models import Listing, ListingPriceHistory, RawData
@@ -14,7 +7,6 @@ from tests.conftest import make_item, make_response
 
 
 def _fake_api_page(items, total_pages=1, page=1):
-    """Build a fake Next.js data API JSON response."""
     return {
         "pageProps": {
             "data": {
@@ -36,7 +28,6 @@ def _html_with_build_id(build_id="test-build-123"):
 
 
 class TestFullPipeline:
-    """Mock HTTP → fetch → parse → upsert → assert DB."""
 
     @patch("scraper.imovirtual.fetcher.curl_requests")
     @patch("scraper.imovirtual.fetcher.time")

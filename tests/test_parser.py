@@ -1,34 +1,32 @@
-import pytest
-
-from scraper.imovirtual.parser import parse_listing, parse, _build_url, _extract_id
+from scraper.imovirtual.parser import parse_listing, parse, build_url, extract_id
 from tests.conftest import make_item, make_response
 
 
 class TestBuildUrl:
     def test_replaces_lang_and_ad(self):
-        assert _build_url("[lang]/ad/foo-ID123") == "https://www.imovirtual.com/pt/anuncio/foo-ID123"
+        assert build_url("[lang]/ad/foo-ID123") == "https://www.imovirtual.com/pt/anuncio/foo-ID123"
 
     def test_strips_hpr_prefix(self):
-        url = _build_url("[lang]/hpr/ad/bar-ID456")
+        url = build_url("[lang]/hpr/ad/bar-ID456")
         assert "/hpr/" not in url
         assert url == "https://www.imovirtual.com/pt/anuncio/bar-ID456"
 
     def test_absolute_url_passthrough(self):
-        assert _build_url("https://example.com/page") == "https://example.com/page"
+        assert build_url("https://example.com/page") == "https://example.com/page"
 
     def test_empty_returns_none(self):
-        assert _build_url("") is None
+        assert build_url("") is None
 
 
 class TestExtractId:
     def test_uses_item_id_field(self):
-        assert _extract_id({"id": 12345}, "https://example.com") == "12345"
+        assert extract_id({"id": 12345}, "https://example.com") == "12345"
 
     def test_falls_back_to_url_regex(self):
-        assert _extract_id({}, "https://www.imovirtual.com/pt/anuncio/foo-IDabc123") == "abc123"
+        assert extract_id({}, "https://www.imovirtual.com/pt/anuncio/foo-IDabc123") == "abc123"
 
     def test_returns_none_when_no_id(self):
-        assert _extract_id({}, "https://www.imovirtual.com/pt/something") is None
+        assert extract_id({}, "https://www.imovirtual.com/pt/something") is None
 
 
 class TestParseListing:

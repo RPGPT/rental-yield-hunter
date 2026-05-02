@@ -1,8 +1,7 @@
 import json
-import pytest
 from unittest.mock import MagicMock, patch
 
-from scraper.imovirtual.fetcher import _extract_next_data, _min_price
+from scraper.imovirtual.fetcher import extract_next_data, min_price
 
 
 class TestExtractNextData:
@@ -12,16 +11,16 @@ class TestExtractNextData:
         <script id="__NEXT_DATA__" type="application/json">{"buildId":"abc123","props":{}}</script>
         </body></html>
         '''
-        data = _extract_next_data(html)
+        data = extract_next_data(html)
         assert data["buildId"] == "abc123"
 
     def test_returns_none_when_missing(self):
-        assert _extract_next_data("<html><body></body></html>") is None
+        assert extract_next_data("<html><body></body></html>") is None
 
     def test_handles_complex_json(self):
         payload = {"buildId": "xyz", "props": {"pageProps": {"data": {}}}}
         html = f'<script id="__NEXT_DATA__" type="application/json">{json.dumps(payload)}</script>'
-        data = _extract_next_data(html)
+        data = extract_next_data(html)
         assert data["buildId"] == "xyz"
 
 
@@ -31,17 +30,17 @@ class TestMinPrice:
             {"totalPrice": {"value": 150000}},
             {"totalPrice": {"value": 200000}},
         ]
-        assert _min_price(items) == 150000
+        assert min_price(items) == 150000
 
     def test_skips_none_price(self):
         items = [
             {"totalPrice": None},
             {"totalPrice": {"value": 180000}},
         ]
-        assert _min_price(items) == 180000
+        assert min_price(items) == 180000
 
     def test_returns_none_for_empty(self):
-        assert _min_price([]) is None
+        assert min_price([]) is None
 
 
 class TestFetchIntegration:

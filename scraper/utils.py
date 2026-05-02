@@ -1,6 +1,6 @@
-from config import TENANT_KEYWORDS
+from config import RENTED_KEYWORDS
 
 
 def is_rented(text: str) -> bool:
     lower = text.lower()
-    return any(kw in lower for kw in TENANT_KEYWORDS)
+    return any(kw in lower for kw in RENTED_KEYWORDS)

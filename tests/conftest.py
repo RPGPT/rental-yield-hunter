@@ -30,7 +30,6 @@ def db(test_engine):
 
 @pytest.fixture
 def clean_db(db):
-    """Yields a session and cleans up all test data afterwards."""
     yield db
     db.execute(text("DELETE FROM raw_data"))
     db.execute(text("DELETE FROM listing_price_history"))
@@ -39,7 +38,6 @@ def clean_db(db):
 
 
 def make_item(**overrides):
-    """Factory for a realistic imovirtual API item dict."""
     item = {
         "id": 99999999,
         "title": "Apartamento T2 em Paranhos",
@@ -66,7 +64,6 @@ def make_item(**overrides):
 
 
 def make_response(*items):
-    """Wrap items into an API response dict."""
     return {
         "items": list(items),
         "pagination": {"totalItems": len(items), "totalPages": 1, "currentPage": 1},

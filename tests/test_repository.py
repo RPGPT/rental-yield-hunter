@@ -1,4 +1,3 @@
-import pytest
 from datetime import datetime, timezone
 
 from db.models import Listing, ListingPriceHistory, RawData

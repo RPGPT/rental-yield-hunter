@@ -1,28 +1,26 @@
-import json
 import logging
 import re
 from datetime import datetime, timezone
-from typing import Optional, List
+from typing import Optional
 
-from config import MAX_PRICE, SOURCE, ESTATE_MAP, ROOMS_MAP, CONDITION_MAP
+from config import MAX_PRICE
+from scraper.imovirtual.constants import BASE_URL, SOURCE, ESTATE_MAP, ROOMS_MAP, CONDITION_MAP
 from scraper.utils import is_rented
 
 logger = logging.getLogger(__name__)
 
-BASE = "https://www.imovirtual.com/"
 
-
-def _build_url(href: str) -> Optional[str]:
+def build_url(href: str) -> Optional[str]:
     if not href:
         return None
     href = href.replace("[lang]", "pt").replace("/ad/", "/anuncio/")
     href = re.sub(r"/hpr/", "/", href)
     if href.startswith("http"):
         return href
-    return BASE + href.lstrip("/")
+    return BASE_URL + href.lstrip("/")
 
 
-def _extract_id(item: dict, url: str) -> Optional[str]:
+def extract_id(item: dict, url: str) -> Optional[str]:
     raw_id = item.get("id")
     if raw_id:
         return str(raw_id)
@@ -30,7 +28,7 @@ def _extract_id(item: dict, url: str) -> Optional[str]:
     return match.group(1) if match else None
 
 
-def _build_location(location_obj: dict) -> tuple:
+def build_location(location_obj: dict) -> tuple:
     addr = location_obj.get("address", {})
     street = addr.get("street", {}).get("name", "")
     city = addr.get("city", {}).get("name", "")
@@ -49,11 +47,11 @@ def parse_listing(item: dict) -> Optional[dict]:
         if price > MAX_PRICE:
             return None
 
-        url = _build_url(item.get("href", ""))
+        url = build_url(item.get("href", ""))
         if not url:
             return None
 
-        listing_id = _extract_id(item, url)
+        listing_id = extract_id(item, url)
         if not listing_id:
             return None
 
@@ -61,7 +59,7 @@ def parse_listing(item: dict) -> Optional[dict]:
         description = item.get("shortDescription", "")
         area = item.get("areaInSquareMeters")
         ppm2 = (item.get("pricePerSquareMeter") or {}).get("value")
-        location, city, parish = _build_location(item.get("location", {}))
+        location, city, parish = build_location(item.get("location", {}))
         tags = item.get("tags") or []
 
         now = datetime.now(timezone.utc)
@@ -95,7 +93,7 @@ def parse_listing(item: dict) -> Optional[dict]:
         return None
 
 
-def parse(responses: List[dict]) -> List[dict]:
+def parse(responses: list[dict]) -> list[dict]:
     seen = set()
     listings = []
 

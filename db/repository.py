@@ -1,6 +1,4 @@
-import json
 import logging
-from typing import List
 
 from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert
@@ -24,7 +22,7 @@ UPSERT_SET = [
 ]
 
 
-def upsert_listings(db: Session, listings: List[dict]):
+def upsert_listings(db: Session, listings: list[dict]):
     if not listings:
         return
 
@@ -64,7 +62,7 @@ def upsert_listings(db: Session, listings: List[dict]):
     db.commit()
 
 
-def _get_current_prices(db: Session, ids: List[str]) -> dict:
+def _get_current_prices(db: Session, ids: list[str]) -> dict:
     if not ids:
         return {}
     rows = db.execute(
