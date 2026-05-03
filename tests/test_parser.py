@@ -57,12 +57,6 @@ class TestParseListing:
             result = parse_listing(make_item(roomsNumber=rooms))
             assert result["typology"] == expected
 
-    def test_condition_mapping(self):
-        result = parse_listing(make_item(investmentState="READY_TO_USE"))
-        assert result["condition"] == "new"
-
-        result = parse_listing(make_item(investmentState="TO_RENOVATION"))
-        assert result["condition"] == "to_renovate"
 
     def test_no_price_returns_none(self):
         assert parse_listing(make_item(totalPrice=None)) is None
@@ -108,7 +102,6 @@ class TestParseListing:
         assert result["price_per_m2"] is None
         assert result["floor"] is None
         assert result["typology"] is None
-        assert result["condition"] is None
 
 
     def test_lifetime_rent_defaults_false(self):

@@ -21,7 +21,6 @@ def _listing(**overrides):
         "typology": "T2",
         "floor": "3",
         "has_garage": True,
-        "condition": None,
         "is_rented": False,
         "lifetime_rent": False,
         "active": True,

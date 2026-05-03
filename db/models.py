@@ -28,7 +28,6 @@ class Listing(Base):
     floor = Column(Text)
 
     has_garage = Column(Boolean)
-    condition = Column(Text)
 
     is_rented = Column(Boolean, default=False)
     lifetime_rent = Column(Boolean, default=False)

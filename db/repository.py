@@ -17,7 +17,7 @@ UPSERT_SET = [
     "title", "description", "price", "area", "price_per_m2",
     "location", "city",
     "property_type", "typology", "floor",
-    "has_garage", "condition",
+    "has_garage",
     "is_rented", "lifetime_rent", "active", "inactive_since",
     "last_seen", "updated_at",
 ]

@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from config import MAX_PRICE
-from scraper.imovirtual.constants import BASE_URL, SOURCE, ESTATE_MAP, ROOMS_MAP, CONDITION_MAP
+from scraper.imovirtual.constants import BASE_URL, SOURCE, ESTATE_MAP, ROOMS_MAP
 from scraper.utils import is_rented
 
 logger = logging.getLogger(__name__)
@@ -80,7 +80,6 @@ def parse_listing(item: dict) -> Optional[dict]:
             "typology": ROOMS_MAP.get(item.get("roomsNumber")),
             "floor": str(item["floorNumber"]) if item.get("floorNumber") is not None else None,
             "has_garage": "PARKING_SPOT" in tags or "garage" in " ".join(features).lower(),
-            "condition": CONDITION_MAP.get(item.get("investmentState")),
             "is_rented": is_rented(f"{title} {description}"),
             "lifetime_rent": False,
             "active": True,
