@@ -34,7 +34,7 @@ def build_location(location_obj: dict) -> tuple:
     city = addr.get("city", {}).get("name", "")
     province = addr.get("province", {}).get("name", "")
     raw = ", ".join(p for p in [street, city, province] if p)
-    return raw, city or None, None
+    return raw, city or None
 
 
 def parse_listing(item: dict) -> Optional[dict]:
@@ -59,8 +59,9 @@ def parse_listing(item: dict) -> Optional[dict]:
         description = item.get("shortDescription", "")
         area = item.get("areaInSquareMeters")
         ppm2 = (item.get("pricePerSquareMeter") or {}).get("value")
-        location, city, parish = build_location(item.get("location", {}))
+        location, city = build_location(item.get("location", {}))
         tags = item.get("tags") or []
+        features = item.get("features") or []
 
         now = datetime.now(timezone.utc)
 
@@ -75,14 +76,11 @@ def parse_listing(item: dict) -> Optional[dict]:
             "price_per_m2": float(ppm2) if ppm2 is not None else None,
             "location": location,
             "city": city,
-            "parish": parish,
             "property_type": ESTATE_MAP.get(item.get("estate")),
             "typology": ROOMS_MAP.get(item.get("roomsNumber")),
             "floor": str(item["floorNumber"]) if item.get("floorNumber") is not None else None,
-            "has_garage": "PARKING_SPOT" in tags,
-            "has_elevator": None,
+            "has_garage": "PARKING_SPOT" in tags or "garage" in " ".join(features).lower(),
             "condition": CONDITION_MAP.get(item.get("investmentState")),
-            "rent_detected": None,
             "is_rented": is_rented(f"{title} {description}"),
             "lifetime_rent": False,
             "active": True,

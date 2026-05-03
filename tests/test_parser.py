@@ -92,6 +92,10 @@ class TestParseListing:
         assert parse_listing(make_item(tags=[]))["has_garage"] is False
         assert parse_listing(make_item(tags=None))["has_garage"] is False
 
+    def test_has_garage_from_features(self):
+        assert parse_listing(make_item(tags=[], features=["Garage"]))["has_garage"] is True
+        assert parse_listing(make_item(tags=[], features=["Garden"]))["has_garage"] is False
+
     def test_missing_optional_fields(self):
         result = parse_listing(make_item(
             areaInSquareMeters=None,

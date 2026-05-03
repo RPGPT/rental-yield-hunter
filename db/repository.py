@@ -15,9 +15,9 @@ LISTING_COLUMNS = [
 
 UPSERT_SET = [
     "title", "description", "price", "area", "price_per_m2",
-    "location", "city", "parish", "latitude", "longitude",
+    "location", "city",
     "property_type", "typology", "floor",
-    "has_elevator", "has_garage", "condition",
+    "has_garage", "condition",
     "is_rented", "lifetime_rent", "active", "inactive_since",
     "last_seen", "updated_at",
 ]
@@ -96,4 +96,3 @@ def deactivate_missing(db: Session, source: str, active_ids: list[str]):
     if count:
         logger.info("Deactivated %d listings no longer found in %s", count, source)
     db.commit()
-

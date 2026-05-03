@@ -17,14 +17,11 @@ def _listing(**overrides):
         "price_per_m2": 2500.0,
         "location": "Paranhos, Porto",
         "city": "Paranhos",
-        "parish": None,
         "property_type": "apartment",
         "typology": "T2",
         "floor": "3",
-        "has_elevator": None,
         "has_garage": True,
         "condition": None,
-        "rent_detected": None,
         "is_rented": False,
         "lifetime_rent": False,
         "active": True,
@@ -230,5 +227,4 @@ class TestDeactivateMissing:
         for lid in ["a1", "a2"]:
             row = clean_db.query(Listing).filter(Listing.id == lid).first()
             assert row.active is True
-
 

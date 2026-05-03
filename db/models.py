@@ -22,20 +22,14 @@ class Listing(Base):
 
     location = Column(Text)
     city = Column(Text)
-    parish = Column(Text)
-
-    latitude = Column(Float)
-    longitude = Column(Float)
 
     property_type = Column(Text)
     typology = Column(Text)
     floor = Column(Text)
 
-    has_elevator = Column(Boolean)
     has_garage = Column(Boolean)
     condition = Column(Text)
 
-    rent_detected = Column(Integer, default=None)
     is_rented = Column(Boolean, default=False)
     lifetime_rent = Column(Boolean, default=False)
     active = Column(Boolean, default=True, server_default="true")
