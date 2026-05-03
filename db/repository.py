@@ -18,7 +18,8 @@ UPSERT_SET = [
     "location", "city", "parish", "latitude", "longitude",
     "property_type", "typology", "floor",
     "has_elevator", "has_garage", "condition",
-    "is_rented", "lifetime_rent", "last_seen", "updated_at",
+    "is_rented", "lifetime_rent", "active", "inactive_since",
+    "last_seen", "updated_at",
 ]
 
 
@@ -78,3 +79,21 @@ def _get_current_prices(db: Session, ids: list[str]) -> dict:
         {"ids": ids},
     ).fetchall()
     return {r[0]: r[1] for r in rows}
+
+
+def deactivate_missing(db: Session, source: str, active_ids: list[str]):
+    result = db.execute(
+        text("""
+            UPDATE listings
+            SET active = false, inactive_since = NOW()
+            WHERE source = :source
+              AND active = true
+              AND id != ALL(:ids)
+        """),
+        {"source": source, "ids": active_ids},
+    )
+    count = result.rowcount
+    if count:
+        logger.info("Deactivated %d listings no longer found in %s", count, source)
+    db.commit()
+

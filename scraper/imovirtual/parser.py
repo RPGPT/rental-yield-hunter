@@ -85,6 +85,8 @@ def parse_listing(item: dict) -> Optional[dict]:
             "rent_detected": None,
             "is_rented": is_rented(f"{title} {description}"),
             "lifetime_rent": False,
+            "active": True,
+            "inactive_since": None,
             "last_seen": now,
             "updated_at": now,
             "_raw_json": item,

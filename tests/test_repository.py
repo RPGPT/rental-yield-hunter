@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from db.models import Listing, ListingPriceHistory, RawData
-from db.repository import upsert_listings
+from db.repository import upsert_listings, deactivate_missing
 
 
 def _listing(**overrides):
@@ -27,6 +27,8 @@ def _listing(**overrides):
         "rent_detected": None,
         "is_rented": False,
         "lifetime_rent": False,
+        "active": True,
+        "inactive_since": None,
         "last_seen": now,
         "updated_at": now,
     }
@@ -175,4 +177,58 @@ class TestEmptyInput:
     def test_empty_list(self, clean_db):
         upsert_listings(clean_db, [])
         assert clean_db.query(Listing).count() == 0
+
+
+class TestDeactivateMissing:
+    def test_deactivates_missing_listing(self, clean_db):
+        upsert_listings(clean_db, [
+            _listing(id="stay", url="https://example.com/stay"),
+            _listing(id="gone", url="https://example.com/gone"),
+        ])
+
+        deactivate_missing(clean_db, "imovirtual", ["stay"])
+
+        stay = clean_db.query(Listing).filter(Listing.id == "stay").first()
+        assert stay.active is True
+        assert stay.inactive_since is None
+
+        gone = clean_db.query(Listing).filter(Listing.id == "gone").first()
+        assert gone.active is False
+        assert gone.inactive_since is not None
+
+    def test_reactivates_on_rescrape(self, clean_db):
+        upsert_listings(clean_db, [_listing(id="flip", url="https://example.com/flip")])
+        deactivate_missing(clean_db, "imovirtual", [])
+
+        row = clean_db.query(Listing).filter(Listing.id == "flip").first()
+        assert row.active is False
+
+        upsert_listings(clean_db, [_listing(id="flip", url="https://example.com/flip")])
+        clean_db.expire_all()
+
+        row = clean_db.query(Listing).filter(Listing.id == "flip").first()
+        assert row.active is True
+        assert row.inactive_since is None
+
+    def test_does_not_deactivate_other_sources(self, clean_db):
+        upsert_listings(clean_db, [_listing(id="other", url="https://example.com/other", source="idealista")])
+        deactivate_missing(clean_db, "imovirtual", [])
+
+        row = clean_db.query(Listing).filter(Listing.id == "other").first()
+        assert row.active is True
+
+    def test_no_listings_no_crash(self, clean_db):
+        deactivate_missing(clean_db, "imovirtual", [])
+
+    def test_all_still_active(self, clean_db):
+        upsert_listings(clean_db, [
+            _listing(id="a1", url="https://example.com/a1"),
+            _listing(id="a2", url="https://example.com/a2"),
+        ])
+        deactivate_missing(clean_db, "imovirtual", ["a1", "a2"])
+
+        for lid in ["a1", "a2"]:
+            row = clean_db.query(Listing).filter(Listing.id == lid).first()
+            assert row.active is True
+
 
