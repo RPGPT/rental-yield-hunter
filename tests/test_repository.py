@@ -26,6 +26,7 @@ def _listing(**overrides):
         "condition": None,
         "rent_detected": None,
         "is_rented": False,
+        "lifetime_rent": False,
         "last_seen": now,
         "updated_at": now,
     }
@@ -107,6 +108,22 @@ class TestPriceHistory:
         assert history[1].price == 185000
 
 
+class TestLifetimeRent:
+    def test_stores_lifetime_rent(self, clean_db):
+        upsert_listings(clean_db, [_listing(is_rented=True, lifetime_rent=True)])
+
+        row = clean_db.query(Listing).filter(Listing.id == "test-repo-1").first()
+        assert row.lifetime_rent is True
+
+    def test_updates_lifetime_rent(self, clean_db):
+        upsert_listings(clean_db, [_listing(is_rented=True, lifetime_rent=False)])
+        upsert_listings(clean_db, [_listing(is_rented=True, lifetime_rent=True)])
+
+        clean_db.expire_all()
+        row = clean_db.query(Listing).filter(Listing.id == "test-repo-1").first()
+        assert row.lifetime_rent is True
+
+
 class TestRawData:
     def test_stores_raw_json(self, clean_db):
         raw = {"id": 99, "title": "Test"}
@@ -128,6 +145,13 @@ class TestRawData:
 
         row = clean_db.query(RawData).filter(RawData.listing_id == "test-repo-1").first()
         assert row is None
+
+    def test_stores_raw_html(self, clean_db):
+        upsert_listings(clean_db, [_listing(_raw_html="<html>test</html>")])
+
+        row = clean_db.query(RawData).filter(RawData.listing_id == "test-repo-1").first()
+        assert row is not None
+        assert row.raw_html == "<html>test</html>"
 
 
 class TestEmptyInput:

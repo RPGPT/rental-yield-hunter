@@ -1,6 +1,7 @@
 import json
 import logging
 import time
+import unicodedata
 from typing import Optional
 
 from curl_cffi import requests as curl_requests
@@ -148,7 +149,9 @@ def fetch_details(listings: list[dict]) -> list[dict]:
         description, html = _fetch_detail(session, url)
         if description:
             listing["description"] = description
-            listing["lifetime_rent"] = "vitalicio" in description.lower()
+            normalized = unicodedata.normalize("NFD", description.lower())
+            stripped = "".join(c for c in normalized if unicodedata.category(c) != "Mn")
+            listing["lifetime_rent"] = "vitalicio" in stripped or "vitalicia" in stripped
         if html:
             listing["_raw_html"] = html
             fetched += 1

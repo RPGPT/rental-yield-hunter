@@ -1,7 +1,7 @@
 import json
 from unittest.mock import MagicMock, patch
 
-from scraper.imovirtual.fetcher import extract_next_data, min_price
+from scraper.imovirtual.fetcher import extract_next_data, min_price, fetch_details
 
 
 class TestExtractNextData:
@@ -110,4 +110,100 @@ class TestFetchIntegration:
 
         from scraper.imovirtual.fetcher import fetch
         assert fetch() == []
+
+
+def _detail_html(description="Some description"):
+    ad = {"description": description}
+    data = json.dumps({"pageProps": {"ad": ad}}, ensure_ascii=False)
+    return f'<html><script id="__NEXT_DATA__" type="application/json">{data}</script></html>'
+
+
+class TestFetchDetails:
+    @patch("scraper.imovirtual.fetcher.curl_requests")
+    @patch("scraper.imovirtual.fetcher.time")
+    def test_sets_lifetime_rent_true(self, mock_time, mock_curl):
+        session = MagicMock()
+        mock_curl.Session.return_value = session
+
+        resp = MagicMock(status_code=200, text=_detail_html("Renda vital\u00edcia garantida"))
+        session.get.return_value = resp
+
+        listings = [{"url": "https://www.imovirtual.com/pt/anuncio/x", "is_rented": True}]
+        result = fetch_details(listings)
+
+        assert result[0]["lifetime_rent"] is True
+        assert "vital" in result[0]["description"].lower()
+
+    @patch("scraper.imovirtual.fetcher.curl_requests")
+    @patch("scraper.imovirtual.fetcher.time")
+    def test_sets_lifetime_rent_false_without_keyword(self, mock_time, mock_curl):
+        session = MagicMock()
+        mock_curl.Session.return_value = session
+
+        resp = MagicMock(status_code=200, text=_detail_html("Apartamento arrendado bom estado"))
+        session.get.return_value = resp
+
+        listings = [{"url": "https://www.imovirtual.com/pt/anuncio/y", "is_rented": True}]
+        result = fetch_details(listings)
+
+        assert result[0]["lifetime_rent"] is False
+
+    @patch("scraper.imovirtual.fetcher.curl_requests")
+    @patch("scraper.imovirtual.fetcher.time")
+    def test_vitalicio_without_accent(self, mock_time, mock_curl):
+        session = MagicMock()
+        mock_curl.Session.return_value = session
+
+        resp = MagicMock(status_code=200, text=_detail_html("Contrato vitalicio em vigor"))
+        session.get.return_value = resp
+
+        listings = [{"url": "https://www.imovirtual.com/pt/anuncio/z", "is_rented": True}]
+        result = fetch_details(listings)
+
+        assert result[0]["lifetime_rent"] is True
+
+    @patch("scraper.imovirtual.fetcher.curl_requests")
+    @patch("scraper.imovirtual.fetcher.time")
+    def test_case_insensitive(self, mock_time, mock_curl):
+        session = MagicMock()
+        mock_curl.Session.return_value = session
+
+        resp = MagicMock(status_code=200, text=_detail_html("RENDA VITAL\u00cdCIA"))
+        session.get.return_value = resp
+
+        listings = [{"url": "https://www.imovirtual.com/pt/anuncio/w", "is_rented": True}]
+        result = fetch_details(listings)
+
+        assert result[0]["lifetime_rent"] is True
+
+    @patch("scraper.imovirtual.fetcher.curl_requests")
+    @patch("scraper.imovirtual.fetcher.time")
+    def test_skips_non_rented(self, mock_time, mock_curl):
+        session = MagicMock()
+        mock_curl.Session.return_value = session
+
+        listings = [
+            {"url": "https://www.imovirtual.com/pt/anuncio/a", "is_rented": False},
+            {"url": "https://www.imovirtual.com/pt/anuncio/b", "is_rented": False},
+        ]
+        result = fetch_details(listings)
+
+        assert session.get.call_count == 0
+        assert "_raw_html" not in result[0]
+
+    @patch("scraper.imovirtual.fetcher.curl_requests")
+    @patch("scraper.imovirtual.fetcher.time")
+    def test_stores_raw_html(self, mock_time, mock_curl):
+        session = MagicMock()
+        mock_curl.Session.return_value = session
+
+        html = _detail_html("Test")
+        resp = MagicMock(status_code=200, text=html)
+        session.get.return_value = resp
+
+        listings = [{"url": "https://www.imovirtual.com/pt/anuncio/q", "is_rented": True}]
+        result = fetch_details(listings)
+
+        assert result[0]["_raw_html"] == html
+
 

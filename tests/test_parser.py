@@ -107,6 +107,11 @@ class TestParseListing:
         assert result["condition"] is None
 
 
+    def test_lifetime_rent_defaults_false(self):
+        result = parse_listing(make_item())
+        assert result["lifetime_rent"] is False
+
+
 class TestParse:
     def test_deduplication_by_id(self):
         item = make_item()
