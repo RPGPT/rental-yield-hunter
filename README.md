@@ -74,11 +74,11 @@ Can also be triggered manually via `workflow_dispatch`.
 
 ## Schema
 
-| Table | Purpose |
-|---|---|
-| `listings` | All properties ≤450k (24 columns, PK = listing ID) |
-| `listing_price_history` | Price change log |
-| `raw_data` | Raw API JSON per listing |
+| Table | Purpose                                            |
+|---|----------------------------------------------------|
+| `listings` | All properties ≤405k (24 columns, PK = listing ID) |
+| `listing_price_history` | Price change log                                   |
+| `raw_data` | Raw API JSON per listing                           |
 
 ## Disclaimer
 

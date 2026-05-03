@@ -69,23 +69,21 @@ def _fetch_page(session, build_id: str, page: int) -> Optional[dict]:
     return resp.json().get("pageProps", {}).get("data", {}).get("searchAds")
 
 
-def _fetch_detail(session, build_id: str, slug: str) -> Optional[str]:
-    url = f"{BASE_URL}_next/data/{build_id}/{slug}.json"
+def _fetch_detail(session, url: str) -> tuple[Optional[str], Optional[str]]:
     resp = session.get(url, headers={
-        "Accept": "application/json",
+        "Accept": "text/html",
         "Accept-Language": "pt-PT,pt;q=0.9",
-        "Referer": BASE_URL + slug,
-        "x-nextjs-data": "1",
     })
 
     if resp.status_code != 200:
-        return None
+        return None, None
 
-    ad = resp.json().get("pageProps", {}).get("ad")
-    if not ad:
-        return None
+    html = resp.text
+    data = extract_next_data(html)
+    ad = (data or {}).get("pageProps", {}).get("ad", {})
+    description = ad.get("description")
 
-    return ad.get("description", "")
+    return description, html
 
 
 def fetch() -> list[dict]:
@@ -129,28 +127,24 @@ def fetch() -> list[dict]:
     return responses
 
 
-def fetch_descriptions(listings: list[dict]) -> list[dict]:
+def fetch_details(listings: list[dict]) -> list[dict]:
     if not listings:
         return listings
 
     session = curl_requests.Session(impersonate="chrome")
-    build_id = _get_build_id(session)
-    if not build_id:
-        logger.warning("Could not get buildId for detail fetching")
-        return listings
-
     total = len(listings)
     fetched = 0
 
     for i, listing in enumerate(listings):
         url = listing.get("url", "")
-        slug = url.replace(BASE_URL, "").rstrip("/")
-        if not slug:
+        if not url:
             continue
 
-        description = _fetch_detail(session, build_id, slug)
+        description, html = _fetch_detail(session, url)
         if description:
             listing["description"] = description
+        if html:
+            listing["_raw_html"] = html
             fetched += 1
 
         if (i + 1) % 50 == 0:
@@ -158,5 +152,5 @@ def fetch_descriptions(listings: list[dict]) -> list[dict]:
 
         time.sleep(REQUEST_DELAY)
 
-    logger.info("Fetched %d/%d full descriptions", fetched, total)
+    logger.info("Fetched %d/%d detail pages", fetched, total)
     return listings

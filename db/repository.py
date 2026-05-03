@@ -48,14 +48,22 @@ def upsert_listings(db: Session, listings: list[dict]):
         logger.info("Recorded %d price changes", len(price_changes))
 
     raw_rows = [
-        {"listing_id": l["id"], "raw_json": l.get("_raw_json")}
-        for l in listings if l.get("_raw_json")
+        {
+            "listing_id": l["id"],
+            "raw_json": l.get("_raw_json"),
+            "raw_html": l.get("_raw_html"),
+        }
+        for l in listings if l.get("_raw_json") or l.get("_raw_html")
     ]
     if raw_rows:
         raw_stmt = insert(RawData).values(raw_rows)
         raw_stmt = raw_stmt.on_conflict_do_update(
             index_elements=["listing_id"],
-            set_={"raw_json": raw_stmt.excluded.raw_json, "captured_at": text("NOW()")},
+            set_={
+                "raw_json": raw_stmt.excluded.raw_json,
+                "raw_html": raw_stmt.excluded.raw_html,
+                "captured_at": text("NOW()"),
+            },
         )
         db.execute(raw_stmt)
 
