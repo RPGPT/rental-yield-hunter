@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from db.models import Listing, ListingPriceHistory, RawData
-from db.repository import upsert_listings, deactivate_missing
+from db.repository import upsert_listings, deactivate_missing, _sanitize_url
 
 
 def _listing(**overrides):
@@ -226,4 +226,42 @@ class TestDeactivateMissing:
         for lid in ["a1", "a2"]:
             row = clean_db.query(Listing).filter(Listing.id == lid).first()
             assert row.active is True
+
+
+class TestSanitizeUrl:
+    def test_strips_hpr_from_full_url(self):
+        url = "https://www.imovirtual.com/hpr/pt/anuncio/apartamento-t1-ID123"
+        assert _sanitize_url(url) == "https://www.imovirtual.com/pt/anuncio/apartamento-t1-ID123"
+
+
+    def test_clean_url_unchanged(self):
+        url = "https://www.imovirtual.com/pt/anuncio/apartamento-t1-ID123"
+        assert _sanitize_url(url) == url
+
+    def test_none_returns_none(self):
+        assert _sanitize_url(None) is None
+
+    def test_empty_returns_empty(self):
+        assert _sanitize_url("") == ""
+
+    def test_upsert_sanitizes_hpr_url(self, clean_db):
+        bad_url = "https://www.imovirtual.com/hpr/pt/anuncio/apartamento-ID999"
+        upsert_listings(clean_db, [_listing(id="hpr-test", url=bad_url)])
+
+        row = clean_db.query(Listing).filter(Listing.id == "hpr-test").first()
+        assert "/hpr/" not in row.url
+        assert row.url == "https://www.imovirtual.com/pt/anuncio/apartamento-ID999"
+
+    def test_upsert_corrects_existing_hpr_url(self, clean_db):
+        bad_url = "https://www.imovirtual.com/hpr/pt/anuncio/apartamento-ID888"
+        good_url = "https://www.imovirtual.com/pt/anuncio/apartamento-ID888"
+
+        # First insert with bad URL (simulating old data)
+        upsert_listings(clean_db, [_listing(id="hpr-fix", url=bad_url)])
+        # Re-scrape still arrives with bad URL — repository must fix it
+        upsert_listings(clean_db, [_listing(id="hpr-fix", url=bad_url)])
+
+        clean_db.expire_all()
+        row = clean_db.query(Listing).filter(Listing.id == "hpr-fix").first()
+        assert row.url == good_url
 

@@ -1,22 +1,11 @@
-name: Scrape
+name: Migrate Database
 
 on:
-  schedule:
-    - cron: "0 4 * * *"
   workflow_dispatch:
-    inputs:
-      source:
-        description: "Source"
-        required: true
-        default: "Imovirtual"
-        type: choice
-        options:
-          - Imovirtual
 
 jobs:
-  scrape:
+  migrate:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
 
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -33,4 +22,3 @@ jobs:
 
       - run: python -m alembic upgrade head
 
-      - run: python main.py --source imovirtual

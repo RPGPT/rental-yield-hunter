@@ -31,6 +31,7 @@ class Listing(Base):
 
     is_rented = Column(Boolean, default=False)
     lifetime_rent = Column(Boolean, default=False)
+    is_favorite = Column(Boolean, default=False, server_default="false")
     active = Column(Boolean, default=True, server_default="true")
     inactive_since = Column(TIMESTAMP, nullable=True)
 

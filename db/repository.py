@@ -1,4 +1,5 @@
 import logging
+from typing import Optional
 
 from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert
@@ -14,6 +15,7 @@ LISTING_COLUMNS = [
 ]
 
 UPSERT_SET = [
+    "url",
     "title", "description", "price", "area", "price_per_m2",
     "location", "city",
     "property_type", "typology", "floor",
@@ -22,10 +24,20 @@ UPSERT_SET = [
     "last_seen", "updated_at",
 ]
 
+def _sanitize_url(url: Optional[str]) -> Optional[str]:
+    if not url:
+        return url
+    return url.replace("/hpr/", "/")
+
 
 def upsert_listings(db: Session, listings: list[dict]):
     if not listings:
         return
+
+    # Ensure /hpr/ is never stored regardless of what the parser produced
+    for l in listings:
+        if "url" in l:
+            l["url"] = _sanitize_url(l["url"])
 
     existing_prices = _get_current_prices(db, [l["id"] for l in listings])
 
