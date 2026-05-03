@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 LISTING_COLUMNS = [
     c.name for c in Listing.__table__.columns
-    if c.name not in ("first_seen", "created_at")
+    if c.name not in ("first_seen", "created_at", "is_favorite", "is_deleted")
 ]
 
 UPSERT_SET = [
@@ -39,12 +39,13 @@ def upsert_listings(db: Session, listings: list[dict]):
         if "url" in l:
             l["url"] = _sanitize_url(l["url"])
 
-    existing_prices = _get_current_prices(db, [l["id"] for l in listings])
+    # Single query: fetch existing price + deleted flag for all incoming IDs
+    existing = _get_existing(db, [l["id"] for l in listings])
 
     price_changes = []
     for l in listings:
-        old_price = existing_prices.get(l["id"])
-        if old_price is not None and l.get("price") is not None and old_price != l["price"]:
+        row = existing.get(l["id"])
+        if row and not row["is_deleted"] and l.get("price") is not None and row["price"] != l["price"]:
             price_changes.append({"listing_id": l["id"], "price": l["price"]})
 
     clean = [{k: v for k, v in l.items() if k in LISTING_COLUMNS} for l in listings]
@@ -53,6 +54,8 @@ def upsert_listings(db: Session, listings: list[dict]):
     stmt = stmt.on_conflict_do_update(
         index_elements=["id"],
         set_={col: getattr(stmt.excluded, col) for col in UPSERT_SET},
+        # Never touch a row that has been manually deleted
+        where=(Listing.is_deleted == False),
     )
     db.execute(stmt)
 
@@ -69,6 +72,9 @@ def upsert_listings(db: Session, listings: list[dict]):
         for l in listings if l.get("_raw_json") or l.get("_raw_html")
     ]
     if raw_rows:
+        # Filter out deleted listings — don't update raw data for them either
+        raw_rows = [r for r in raw_rows if not existing.get(r["listing_id"], {}).get("is_deleted")]
+    if raw_rows:
         raw_stmt = insert(RawData).values(raw_rows)
         raw_stmt = raw_stmt.on_conflict_do_update(
             index_elements=["listing_id"],
@@ -83,14 +89,15 @@ def upsert_listings(db: Session, listings: list[dict]):
     db.commit()
 
 
-def _get_current_prices(db: Session, ids: list[str]) -> dict:
+def _get_existing(db: Session, ids: list[str]) -> dict:
+    """Return {id: {price, is_deleted}} for all ids that already exist."""
     if not ids:
         return {}
     rows = db.execute(
-        text("SELECT id, price FROM listings WHERE id = ANY(:ids)"),
+        text("SELECT id, price, is_deleted FROM listings WHERE id = ANY(:ids)"),
         {"ids": ids},
     ).fetchall()
-    return {r[0]: r[1] for r in rows}
+    return {r[0]: {"price": r[1], "is_deleted": r[2]} for r in rows}
 
 
 def deactivate_missing(db: Session, source: str, active_ids: list[str]):
@@ -100,6 +107,7 @@ def deactivate_missing(db: Session, source: str, active_ids: list[str]):
             SET active = false, inactive_since = NOW()
             WHERE source = :source
               AND active = true
+              AND is_deleted = false
               AND id != ALL(:ids)
         """),
         {"source": source, "ids": active_ids},

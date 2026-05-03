@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from sqlalchemy import text
 
 from db.models import Listing, ListingPriceHistory, RawData
 from db.repository import upsert_listings, deactivate_missing, _sanitize_url
@@ -264,4 +265,91 @@ class TestSanitizeUrl:
         clean_db.expire_all()
         row = clean_db.query(Listing).filter(Listing.id == "hpr-fix").first()
         assert row.url == good_url
+
+
+class TestIsDeleted:
+    def _mark_deleted(self, db, listing_id: str):
+        db.execute(text(f"UPDATE listings SET is_deleted = true WHERE id = '{listing_id}'"))
+        db.commit()
+
+    def test_deleted_default_is_false(self, clean_db):
+        upsert_listings(clean_db, [_listing()])
+        row = clean_db.query(Listing).filter_by(id="test-repo-1").first()
+        assert row.is_deleted is False
+
+    def test_deleted_listing_price_not_updated(self, clean_db):
+        upsert_listings(clean_db, [_listing(price=200000)])
+        self._mark_deleted(clean_db, "test-repo-1")
+        upsert_listings(clean_db, [_listing(price=150000)])
+        clean_db.expire_all()
+        assert clean_db.query(Listing).filter_by(id="test-repo-1").first().price == 200000
+
+    def test_deleted_listing_all_fields_frozen(self, clean_db):
+        upsert_listings(clean_db, [_listing(title="Original", city="Porto")])
+        self._mark_deleted(clean_db, "test-repo-1")
+        upsert_listings(clean_db, [_listing(title="Changed", city="Lisbon", price=99000)])
+        clean_db.expire_all()
+        row = clean_db.query(Listing).filter_by(id="test-repo-1").first()
+        assert row.title == "Original"
+        assert row.city == "Porto"
+        assert row.price == 200000
+
+    def test_deleted_listing_skips_price_history(self, clean_db):
+        upsert_listings(clean_db, [_listing(price=200000)])
+        self._mark_deleted(clean_db, "test-repo-1")
+        upsert_listings(clean_db, [_listing(price=150000)])
+        history = clean_db.query(ListingPriceHistory).filter_by(listing_id="test-repo-1").all()
+        assert len(history) == 0
+
+    def test_deleted_listing_raw_data_not_updated(self, clean_db):
+        upsert_listings(clean_db, [_listing(_raw_json={"v": 1})])
+        self._mark_deleted(clean_db, "test-repo-1")
+        upsert_listings(clean_db, [_listing(_raw_json={"v": 2})])
+        clean_db.expire_all()
+        row = clean_db.query(RawData).filter_by(listing_id="test-repo-1").first()
+        assert row.raw_json["v"] == 1
+
+    def test_scraper_cannot_set_is_deleted_true(self, clean_db):
+        # Even if the dict contains is_deleted=True, UPSERT_SET excludes it
+        upsert_listings(clean_db, [_listing(is_deleted=True)])
+        row = clean_db.query(Listing).filter_by(id="test-repo-1").first()
+        assert row.is_deleted is False
+
+    def test_scraper_cannot_reset_is_deleted_to_false(self, clean_db):
+        upsert_listings(clean_db, [_listing()])
+        self._mark_deleted(clean_db, "test-repo-1")
+        # Re-scrape tries to set is_deleted=False — must have no effect
+        upsert_listings(clean_db, [_listing(is_deleted=False)])
+        clean_db.expire_all()
+        assert clean_db.query(Listing).filter_by(id="test-repo-1").first().is_deleted is True
+
+    def test_non_deleted_listing_still_updates(self, clean_db):
+        upsert_listings(clean_db, [_listing(price=200000)])
+        upsert_listings(clean_db, [_listing(price=180000)])
+        clean_db.expire_all()
+        assert clean_db.query(Listing).filter_by(id="test-repo-1").first().price == 180000
+
+    def test_only_deleted_listing_is_skipped_others_proceed(self, clean_db):
+        upsert_listings(clean_db, [
+            _listing(id="keep", url="https://example.com/keep", price=200000),
+            _listing(id="del",  url="https://example.com/del",  price=200000),
+        ])
+        self._mark_deleted(clean_db, "del")
+        upsert_listings(clean_db, [
+            _listing(id="keep", url="https://example.com/keep", price=111000),
+            _listing(id="del",  url="https://example.com/del",  price=111000),
+        ])
+        clean_db.expire_all()
+        assert clean_db.query(Listing).filter_by(id="keep").first().price == 111000
+        assert clean_db.query(Listing).filter_by(id="del").first().price == 200000
+
+    def test_deactivate_missing_skips_deleted_listings(self, clean_db):
+        upsert_listings(clean_db, [_listing(id="del", url="https://example.com/del")])
+        self._mark_deleted(clean_db, "del")
+        # "del" is not in active_ids, but is_deleted so it should not be touched
+        deactivate_missing(clean_db, "imovirtual", [])
+        clean_db.expire_all()
+        row = clean_db.query(Listing).filter_by(id="del").first()
+        assert row.active is True  # untouched
+        assert row.inactive_since is None  # untouched
 

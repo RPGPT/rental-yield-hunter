@@ -3,7 +3,7 @@ import re
 from datetime import datetime, timezone
 from typing import Optional
 
-from config import MAX_PRICE
+from config import MAX_PRICE, MIN_PRICE
 from scraper.imovirtual.constants import BASE_URL, SOURCE, ESTATE_MAP, ROOMS_MAP
 from scraper.utils import is_rented
 
@@ -44,7 +44,7 @@ def parse_listing(item: dict) -> Optional[dict]:
             return None
 
         price = int(price_val)
-        if price > MAX_PRICE:
+        if price > MAX_PRICE or price < MIN_PRICE:
             return None
 
         url = build_url(item.get("href", ""))

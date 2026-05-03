@@ -64,6 +64,12 @@ class TestParseListing:
     def test_price_above_max_returns_none(self):
         assert parse_listing(make_item(totalPrice={"value": 500000})) is None
 
+    def test_price_below_min_returns_none(self):
+        assert parse_listing(make_item(totalPrice={"value": 49999})) is None
+
+    def test_price_at_min_is_included(self):
+        assert parse_listing(make_item(totalPrice={"value": 50000})) is not None
+
     def test_no_href_returns_none(self):
         assert parse_listing(make_item(href="")) is None
 
