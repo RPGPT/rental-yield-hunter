@@ -10,6 +10,10 @@ class Scraper(ABC):
     def parse(self, responses: list[dict]) -> list[dict]:
         ...
 
-    def run(self) -> list[dict]:
-        return self.parse(self.fetch())
+    def enrich(self, listings: list[dict]) -> list[dict]:
+        return listings
 
+    def run(self) -> list[dict]:
+        responses = self.fetch()
+        listings = self.parse(responses)
+        return self.enrich(listings)

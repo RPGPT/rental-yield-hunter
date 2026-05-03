@@ -69,6 +69,25 @@ def _fetch_page(session, build_id: str, page: int) -> Optional[dict]:
     return resp.json().get("pageProps", {}).get("data", {}).get("searchAds")
 
 
+def _fetch_detail(session, build_id: str, slug: str) -> Optional[str]:
+    url = f"{BASE_URL}_next/data/{build_id}/{slug}.json"
+    resp = session.get(url, headers={
+        "Accept": "application/json",
+        "Accept-Language": "pt-PT,pt;q=0.9",
+        "Referer": BASE_URL + slug,
+        "x-nextjs-data": "1",
+    })
+
+    if resp.status_code != 200:
+        return None
+
+    ad = resp.json().get("pageProps", {}).get("ad")
+    if not ad:
+        return None
+
+    return ad.get("description", "")
+
+
 def fetch() -> list[dict]:
     session = curl_requests.Session(impersonate="chrome")
 
@@ -108,3 +127,36 @@ def fetch() -> list[dict]:
         time.sleep(REQUEST_DELAY)
 
     return responses
+
+
+def fetch_descriptions(listings: list[dict]) -> list[dict]:
+    if not listings:
+        return listings
+
+    session = curl_requests.Session(impersonate="chrome")
+    build_id = _get_build_id(session)
+    if not build_id:
+        logger.warning("Could not get buildId for detail fetching")
+        return listings
+
+    total = len(listings)
+    fetched = 0
+
+    for i, listing in enumerate(listings):
+        url = listing.get("url", "")
+        slug = url.replace(BASE_URL, "").rstrip("/")
+        if not slug:
+            continue
+
+        description = _fetch_detail(session, build_id, slug)
+        if description:
+            listing["description"] = description
+            fetched += 1
+
+        if (i + 1) % 50 == 0:
+            logger.info("Detail %d/%d fetched", i + 1, total)
+
+        time.sleep(REQUEST_DELAY)
+
+    logger.info("Fetched %d/%d full descriptions", fetched, total)
+    return listings
