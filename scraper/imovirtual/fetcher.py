@@ -131,11 +131,16 @@ def fetch_details(listings: list[dict]) -> list[dict]:
     if not listings:
         return listings
 
+    rented = [l for l in listings if l.get("is_rented")]
+    if not rented:
+        logger.info("No rented listings — skipping detail fetch")
+        return listings
+
     session = curl_requests.Session(impersonate="chrome")
-    total = len(listings)
+    total = len(rented)
     fetched = 0
 
-    for i, listing in enumerate(listings):
+    for i, listing in enumerate(rented):
         url = listing.get("url", "")
         if not url:
             continue
@@ -152,5 +157,5 @@ def fetch_details(listings: list[dict]) -> list[dict]:
 
         time.sleep(REQUEST_DELAY)
 
-    logger.info("Fetched %d/%d detail pages", fetched, total)
+    logger.info("Fetched %d/%d rented listing detail pages", fetched, total)
     return listings
