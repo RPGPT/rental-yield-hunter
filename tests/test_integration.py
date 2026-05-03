@@ -1,9 +1,11 @@
 from unittest.mock import MagicMock, patch
+import json
 
 from db.models import Listing, ListingPriceHistory, RawData
 from db.repository import upsert_listings
 from scraper.imovirtual.parser import parse
-from tests.conftest import make_item, make_response
+from scraper.imovirtual.fetcher import fetch_details
+from tests.conftest import make_item
 
 
 def _fake_api_page(items, total_pages=1, page=1):
@@ -204,4 +206,46 @@ class TestFullPipeline:
         clean_db.expire_all()
 
         assert clean_db.query(Listing).filter(Listing.id == "6001").first().first_seen == first_seen
+
+    @patch("scraper.imovirtual.fetcher.curl_requests")
+    @patch("scraper.imovirtual.fetcher.time")
+    def test_lifetime_rent_via_enrich(self, mock_time, mock_curl, clean_db):
+        item = make_item(
+            id=7001, href="[lang]/ad/vit-ID7001",
+            title="Apartamento arrendado",
+            shortDescription="Com inquilino",
+        )
+
+        session = MagicMock()
+        mock_curl.Session.return_value = session
+
+        html_resp = MagicMock(status_code=200, text=_html_with_build_id())
+        api_resp = MagicMock(status_code=200)
+        api_resp.json.return_value = _fake_api_page([item])
+        session.get.side_effect = [html_resp, api_resp]
+
+        from scraper.imovirtual.fetcher import fetch
+        listings = parse(fetch())
+        assert listings[0]["is_rented"] is True
+
+        ad = {"description": "Renda vitalicia garantida pelo contrato"}
+        detail_data = json.dumps({"pageProps": {"ad": ad}}, ensure_ascii=False)
+        detail_html = f'<html><script id="__NEXT_DATA__" type="application/json">{detail_data}</script></html>'
+
+        detail_session = MagicMock()
+        detail_resp = MagicMock(status_code=200, text=detail_html)
+        detail_session.get.return_value = detail_resp
+        mock_curl.Session.return_value = detail_session
+
+        enriched = fetch_details(listings)
+        upsert_listings(clean_db, enriched)
+
+        row = clean_db.query(Listing).filter(Listing.id == "7001").first()
+        assert row.is_rented is True
+        assert row.lifetime_rent is True
+        assert "vitalicia" in row.description.lower()
+
+        raw = clean_db.query(RawData).filter(RawData.listing_id == "7001").first()
+        assert raw.raw_html is not None
+        assert raw.raw_json is not None
 

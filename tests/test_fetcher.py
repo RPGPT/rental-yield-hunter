@@ -206,4 +206,43 @@ class TestFetchDetails:
 
         assert result[0]["_raw_html"] == html
 
+    @patch("scraper.imovirtual.fetcher.curl_requests")
+    @patch("scraper.imovirtual.fetcher.time")
+    def test_detail_error_no_crash(self, mock_time, mock_curl):
+        session = MagicMock()
+        mock_curl.Session.return_value = session
+
+        resp = MagicMock(status_code=404)
+        session.get.return_value = resp
+
+        listings = [{"url": "https://www.imovirtual.com/pt/anuncio/gone", "is_rented": True}]
+        result = fetch_details(listings)
+
+        assert "description" not in result[0] or result[0].get("description") is None
+        assert "_raw_html" not in result[0]
+
+    def test_empty_listings(self):
+        result = fetch_details([])
+        assert result == []
+
+    @patch("scraper.imovirtual.fetcher.curl_requests")
+    @patch("scraper.imovirtual.fetcher.time")
+    def test_mixed_rented_and_not(self, mock_time, mock_curl):
+        session = MagicMock()
+        mock_curl.Session.return_value = session
+
+        resp = MagicMock(status_code=200, text=_detail_html("Arrendado vitalicio"))
+        session.get.return_value = resp
+
+        listings = [
+            {"url": "https://www.imovirtual.com/pt/anuncio/a", "is_rented": True},
+            {"url": "https://www.imovirtual.com/pt/anuncio/b", "is_rented": False},
+        ]
+        result = fetch_details(listings)
+
+        assert result[0]["lifetime_rent"] is True
+        assert result[0]["_raw_html"] is not None
+        assert "_raw_html" not in result[1]
+        assert session.get.call_count == 1
+
 
