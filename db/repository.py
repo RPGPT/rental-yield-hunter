@@ -18,7 +18,7 @@ UPSERT_SET = [
     "location", "city", "parish", "latitude", "longitude",
     "property_type", "typology", "floor",
     "has_elevator", "has_garage", "condition",
-    "is_rented", "last_seen", "updated_at",
+    "is_rented", "lifetime_rent", "last_seen", "updated_at",
 ]
 
 

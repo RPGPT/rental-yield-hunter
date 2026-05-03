@@ -2,14 +2,15 @@
 
 Revision ID: 0001
 """
+from typing import Optional, Sequence
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 revision: str = '0001'
-down_revision: str | None = None
-branch_labels: str | None = None
-depends_on: str | None = None
+down_revision: Optional[str] = None
+branch_labels: Optional[Sequence[str]] = None
+depends_on: Optional[Sequence[str]] = None
 
 
 def upgrade() -> None:

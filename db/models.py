@@ -37,6 +37,7 @@ class Listing(Base):
 
     rent_detected = Column(Integer, default=None)
     is_rented = Column(Boolean, default=False)
+    lifetime_rent = Column(Boolean, default=False)
 
     first_seen = Column(TIMESTAMP, server_default=func.now())
     last_seen = Column(TIMESTAMP, server_default=func.now())

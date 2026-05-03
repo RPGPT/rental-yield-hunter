@@ -84,6 +84,7 @@ def parse_listing(item: dict) -> Optional[dict]:
             "condition": CONDITION_MAP.get(item.get("investmentState")),
             "rent_detected": None,
             "is_rented": is_rented(f"{title} {description}"),
+            "lifetime_rent": False,
             "last_seen": now,
             "updated_at": now,
             "_raw_json": item,

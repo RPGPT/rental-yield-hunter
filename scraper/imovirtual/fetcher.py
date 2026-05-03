@@ -148,6 +148,7 @@ def fetch_details(listings: list[dict]) -> list[dict]:
         description, html = _fetch_detail(session, url)
         if description:
             listing["description"] = description
+            listing["lifetime_rent"] = "vitalicio" in description.lower()
         if html:
             listing["_raw_html"] = html
             fetched += 1
