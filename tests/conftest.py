@@ -31,8 +31,6 @@ def db(test_engine):
 @pytest.fixture
 def clean_db(db):
     yield db
-    db.execute(text("DELETE FROM user_favorites"))
-    db.execute(text("DELETE FROM users"))
     db.execute(text("DELETE FROM raw_data"))
     db.execute(text("DELETE FROM listing_price_history"))
     db.execute(text("DELETE FROM listings"))
@@ -59,7 +57,6 @@ def make_item(**overrides):
             }
         },
         "href": "[lang]/ad/apartamento-t2-paranhos-ID99999999",
-        "shortDescription": "Belo apartamento T2 renovado.",
     }
     item.update(overrides)
     return item

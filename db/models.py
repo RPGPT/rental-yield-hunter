@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, Float, Boolean, TIMESTAMP, Text, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, Integer, Float, Boolean, TIMESTAMP, Text, ForeignKey
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql import func
@@ -42,7 +42,6 @@ class Listing(Base):
 
     price_history = relationship("ListingPriceHistory", back_populates="listing")
     raw = relationship("RawData", back_populates="listing", uselist=False)
-    favorited_by = relationship("UserFavorite", back_populates="listing")
 
 
 class ListingPriceHistory(Base):
@@ -67,26 +66,4 @@ class RawData(Base):
     listing = relationship("Listing", back_populates="raw")
 
 
-class User(Base):
-    __tablename__ = "users"
-
-    id = Column(Text, primary_key=True)          # Google OAuth 'sub' claim
-    email = Column(Text, unique=True, nullable=False)
-    name = Column(Text, nullable=True)
-    picture = Column(Text, nullable=True)        # profile picture URL
-    created_at = Column(TIMESTAMP, server_default=func.now())
-    updated_at = Column(TIMESTAMP, server_default=func.now())
-
-    favorites = relationship("UserFavorite", back_populates="user")
-
-
-class UserFavorite(Base):
-    __tablename__ = "user_favorites"
-
-    user_id = Column(Text, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
-    listing_id = Column(Text, ForeignKey("listings.id", ondelete="CASCADE"), primary_key=True)
-    created_at = Column(TIMESTAMP, server_default=func.now())
-
-    user = relationship("User", back_populates="favorites")
-    listing = relationship("Listing", back_populates="favorited_by")
 
