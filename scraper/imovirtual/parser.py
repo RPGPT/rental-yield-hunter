@@ -34,7 +34,7 @@ def build_location(location_obj: dict) -> tuple:
     city = addr.get("city", {}).get("name", "")
     province = addr.get("province", {}).get("name", "")
     raw = ", ".join(p for p in [street, city, province] if p)
-    return raw, city or None
+    return raw, city or None, province or None
 
 
 def parse_listing(item: dict) -> Optional[dict]:
@@ -58,7 +58,7 @@ def parse_listing(item: dict) -> Optional[dict]:
         title = item.get("title", "")
         area = item.get("areaInSquareMeters")
         ppm2 = (item.get("pricePerSquareMeter") or {}).get("value")
-        location, city = build_location(item.get("location", {}))
+        location, neighborhood, city = build_location(item.get("location", {}))
         tags = item.get("tags") or []
         features = item.get("features") or []
 
@@ -74,6 +74,7 @@ def parse_listing(item: dict) -> Optional[dict]:
             "area": int(area) if area is not None else None,
             "price_per_m2": float(ppm2) if ppm2 is not None else None,
             "location": location,
+            "neighborhood": neighborhood,
             "city": city,
             "property_type": ESTATE_MAP.get(item.get("estate")),
             "typology": ROOMS_MAP.get(item.get("roomsNumber")),

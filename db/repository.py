@@ -17,7 +17,7 @@ LISTING_COLUMNS = [
 UPSERT_SET = [
     "url",
     "title", "description", "price", "area", "price_per_m2",
-    "location", "city",
+    "location", "neighborhood", "city",
     "property_type", "typology", "floor",
     "has_garage",
     "is_rented", "lifetime_rent", "active", "inactive_since",

@@ -21,6 +21,7 @@ class Listing(Base):
     price_per_m2 = Column(Float)
 
     location = Column(Text)
+    neighborhood = Column(Text)
     city = Column(Text)
 
     property_type = Column(Text)

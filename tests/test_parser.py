@@ -1,4 +1,4 @@
-from scraper.imovirtual.parser import parse_listing, parse, build_url, extract_id
+from scraper.imovirtual.parser import parse_listing, parse, build_url, extract_id, build_location
 from tests.conftest import make_item, make_response
 
 
@@ -16,6 +16,32 @@ class TestBuildUrl:
 
     def test_empty_returns_none(self):
         assert build_url("") is None
+
+
+class TestBuildLocation:
+    def _loc(self, street=None, city=None, province=None):
+        return {"address": {
+            "street": {"name": street} if street else {},
+            "city": {"name": city} if city else {},
+            "province": {"name": province} if province else {},
+        }}
+
+    def test_full_location(self):
+        location, neighborhood, city = build_location(self._loc("Rua A", "Paranhos", "Porto"))
+        assert location == "Rua A, Paranhos, Porto"
+        assert neighborhood == "Paranhos"
+        assert city == "Porto"
+
+    def test_province_maps_to_city(self):
+        _, neighborhood, city = build_location(self._loc(city="Bonfim", province="Porto"))
+        assert neighborhood == "Bonfim"
+        assert city == "Porto"
+
+    def test_empty_location(self):
+        location, neighborhood, city = build_location({})
+        assert location == ""
+        assert neighborhood is None
+        assert city is None
 
 
 class TestExtractId:
@@ -43,7 +69,8 @@ class TestParseListing:
         assert result["typology"] == "T2"
         assert result["floor"] == "3"
         assert result["has_garage"] is True
-        assert result["city"] == "Paranhos"
+        assert result["neighborhood"] == "Paranhos"
+        assert result["city"] == "Porto"
         assert result["url"].startswith("https://www.imovirtual.com/pt/anuncio/")
         assert result["_raw_json"] == item
 
