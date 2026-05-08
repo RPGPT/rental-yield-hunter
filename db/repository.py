@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 LISTING_COLUMNS = [
     c.name for c in Listing.__table__.columns
-    if c.name not in ("first_seen", "created_at", "is_favorite", "is_deleted")
+    if c.name not in ("first_seen", "created_at", "is_deleted")
 ]
 
 UPSERT_SET = [
@@ -116,3 +116,5 @@ def deactivate_missing(db: Session, source: str, active_ids: list[str]):
     if count:
         logger.info("Deactivated %d listings no longer found in %s", count, source)
     db.commit()
+
+

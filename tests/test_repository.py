@@ -33,6 +33,7 @@ def _listing(**overrides):
     return base
 
 
+
 class TestUpsertInsert:
     def test_inserts_new_listing(self, clean_db):
         data = _listing()
@@ -352,4 +353,5 @@ class TestIsDeleted:
         row = clean_db.query(Listing).filter_by(id="del").first()
         assert row.active is True  # untouched
         assert row.inactive_since is None  # untouched
+
 

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, Float, Boolean, TIMESTAMP, Text, ForeignKey
+from sqlalchemy import Column, Integer, Float, Boolean, TIMESTAMP, Text, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql import func
@@ -31,7 +31,6 @@ class Listing(Base):
 
     is_rented = Column(Boolean, default=False)
     lifetime_rent = Column(Boolean, default=False)
-    is_favorite = Column(Boolean, default=False, server_default="false")
     is_deleted = Column(Boolean, default=False, server_default="false")
     active = Column(Boolean, default=True, server_default="true")
     inactive_since = Column(TIMESTAMP, nullable=True)
@@ -43,6 +42,7 @@ class Listing(Base):
 
     price_history = relationship("ListingPriceHistory", back_populates="listing")
     raw = relationship("RawData", back_populates="listing", uselist=False)
+    favorited_by = relationship("UserFavorite", back_populates="listing")
 
 
 class ListingPriceHistory(Base):
@@ -65,3 +65,28 @@ class RawData(Base):
     captured_at = Column(TIMESTAMP, server_default=func.now())
 
     listing = relationship("Listing", back_populates="raw")
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Text, primary_key=True)          # Google OAuth 'sub' claim
+    email = Column(Text, unique=True, nullable=False)
+    name = Column(Text, nullable=True)
+    picture = Column(Text, nullable=True)        # profile picture URL
+    created_at = Column(TIMESTAMP, server_default=func.now())
+    updated_at = Column(TIMESTAMP, server_default=func.now())
+
+    favorites = relationship("UserFavorite", back_populates="user")
+
+
+class UserFavorite(Base):
+    __tablename__ = "user_favorites"
+
+    user_id = Column(Text, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    listing_id = Column(Text, ForeignKey("listings.id", ondelete="CASCADE"), primary_key=True)
+    created_at = Column(TIMESTAMP, server_default=func.now())
+
+    user = relationship("User", back_populates="favorites")
+    listing = relationship("Listing", back_populates="favorited_by")
+

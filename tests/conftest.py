@@ -31,6 +31,8 @@ def db(test_engine):
 @pytest.fixture
 def clean_db(db):
     yield db
+    db.execute(text("DELETE FROM user_favorites"))
+    db.execute(text("DELETE FROM users"))
     db.execute(text("DELETE FROM raw_data"))
     db.execute(text("DELETE FROM listing_price_history"))
     db.execute(text("DELETE FROM listings"))
