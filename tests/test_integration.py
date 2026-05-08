@@ -65,7 +65,6 @@ class TestFullPipeline:
         assert apt_a.price == 195000
         assert apt_a.property_type == "apartment"
         assert apt_a.typology == "T2"
-        assert apt_a.is_rented is True
         assert apt_a.source == "imovirtual"
 
         apt_b = clean_db.query(Listing).filter(Listing.id == "1002").first()

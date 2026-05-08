@@ -8,6 +8,7 @@ from curl_cffi import requests as curl_requests
 
 from config import MAX_PRICE, REQUEST_DELAY
 from scraper.imovirtual.constants import BASE_URL
+from scraper.utils import is_rented
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,12 @@ def min_price(items: list) -> Optional[int]:
         if value is not None:
             return int(value)
     return None
+
+
+def _is_lifetime_rent(text: str) -> bool:
+    normalized = unicodedata.normalize("NFD", text.lower())
+    stripped = "".join(c for c in normalized if unicodedata.category(c) != "Mn")
+    return "vitalicio" in stripped or "vitalicia" in stripped
 
 
 def _get_build_id(session) -> Optional[str]:
@@ -81,8 +88,7 @@ def _fetch_detail(session, url: str) -> tuple[Optional[str], Optional[str]]:
 
     html = resp.text
     data = extract_next_data(html)
-    ad = (data or {}).get("pageProps", {}).get("ad", {})
-    description = ad.get("description")
+    description = (data or {}).get("pageProps", {}).get("ad", {}).get("description")
 
     return description, html
 
@@ -132,16 +138,10 @@ def fetch_details(listings: list[dict]) -> list[dict]:
     if not listings:
         return listings
 
-    rented = [l for l in listings if l.get("is_rented")]
-    if not rented:
-        logger.info("No rented listings — skipping detail fetch")
-        return listings
-
     session = curl_requests.Session(impersonate="chrome")
-    total = len(rented)
     fetched = 0
 
-    for i, listing in enumerate(rented):
+    for i, listing in enumerate(listings):
         url = listing.get("url", "")
         if not url:
             continue
@@ -149,17 +149,16 @@ def fetch_details(listings: list[dict]) -> list[dict]:
         description, html = _fetch_detail(session, url)
         if description:
             listing["description"] = description
-            normalized = unicodedata.normalize("NFD", description.lower())
-            stripped = "".join(c for c in normalized if unicodedata.category(c) != "Mn")
-            listing["lifetime_rent"] = "vitalicio" in stripped or "vitalicia" in stripped
+            listing["is_rented"] = is_rented(f"{listing.get('title', '')} {description}")
+            listing["lifetime_rent"] = _is_lifetime_rent(description)
         if html:
             listing["_raw_html"] = html
             fetched += 1
 
         if (i + 1) % 50 == 0:
-            logger.info("Detail %d/%d fetched", i + 1, total)
+            logger.info("Detail %d/%d fetched", i + 1, len(listings))
 
         time.sleep(REQUEST_DELAY)
 
-    logger.info("Fetched %d/%d rented listing detail pages", fetched, total)
+    logger.info("Fetched %d/%d listing detail pages", fetched, len(listings))
     return listings

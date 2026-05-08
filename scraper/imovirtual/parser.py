@@ -56,7 +56,6 @@ def parse_listing(item: dict) -> Optional[dict]:
             return None
 
         title = item.get("title", "")
-        description = item.get("shortDescription", "")
         area = item.get("areaInSquareMeters")
         ppm2 = (item.get("pricePerSquareMeter") or {}).get("value")
         location, city = build_location(item.get("location", {}))
@@ -70,7 +69,7 @@ def parse_listing(item: dict) -> Optional[dict]:
             "source": SOURCE,
             "url": url,
             "title": title,
-            "description": description,
+            "description": "",
             "price": price,
             "area": int(area) if area is not None else None,
             "price_per_m2": float(ppm2) if ppm2 is not None else None,
@@ -80,7 +79,7 @@ def parse_listing(item: dict) -> Optional[dict]:
             "typology": ROOMS_MAP.get(item.get("roomsNumber")),
             "floor": str(item["floorNumber"]) if item.get("floorNumber") is not None else None,
             "has_garage": "PARKING_SPOT" in tags or "garage" in " ".join(features).lower(),
-            "is_rented": is_rented(f"{title} {description}"),
+            "is_rented": is_rented(title),
             "lifetime_rent": False,
             "active": True,
             "inactive_since": None,
