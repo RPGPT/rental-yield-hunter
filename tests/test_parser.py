@@ -128,6 +128,18 @@ class TestParseListing:
         assert parse_listing(make_item(tags=[], features=["Garage"]))["has_garage"] is True
         assert parse_listing(make_item(tags=[], features=["Garden"]))["has_garage"] is False
 
+    def test_filters_out_non_target_city(self):
+        maia_item = make_item(
+            location={
+                "address": {
+                    "street": {},
+                    "city": {"name": "Moreira"},
+                    "province": {"name": "Maia"},
+                }
+            }
+        )
+        assert parse_listing(maia_item) is None
+
     def test_missing_optional_fields(self):
         result = parse_listing(
             make_item(

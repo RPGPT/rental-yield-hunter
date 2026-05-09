@@ -1,5 +1,6 @@
 SOURCE = "imovirtual"
 BASE_URL = "https://www.imovirtual.com/"
+TARGET_CITY = "Porto"
 
 ESTATE_MAP = {
     "FLAT": "apartment",
