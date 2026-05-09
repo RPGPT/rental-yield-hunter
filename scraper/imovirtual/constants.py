@@ -16,4 +16,3 @@ ROOMS_MAP = {
     "FOUR": "T4",
     "FIVE_OR_MORE": "T5+",
 }
-

@@ -1,8 +1,9 @@
 from datetime import datetime, timezone
+
 from sqlalchemy import text
 
 from db.models import Listing, ListingPriceHistory, RawData
-from db.repository import upsert_listings, deactivate_missing, _sanitize_url
+from db.repository import _sanitize_url, deactivate_missing, upsert_listings
 
 
 def _listing(**overrides):
@@ -32,7 +33,6 @@ def _listing(**overrides):
     }
     base.update(overrides)
     return base
-
 
 
 class TestUpsertInsert:
@@ -81,9 +81,7 @@ class TestPriceHistory:
         upsert_listings(clean_db, [_listing(price=200000)])
         upsert_listings(clean_db, [_listing(price=190000)])
 
-        history = clean_db.query(ListingPriceHistory).filter(
-            ListingPriceHistory.listing_id == "test-repo-1"
-        ).all()
+        history = clean_db.query(ListingPriceHistory).filter(ListingPriceHistory.listing_id == "test-repo-1").all()
         assert len(history) == 1
         assert history[0].price == 190000
 
@@ -91,9 +89,7 @@ class TestPriceHistory:
         upsert_listings(clean_db, [_listing(price=200000)])
         upsert_listings(clean_db, [_listing(price=200000)])
 
-        history = clean_db.query(ListingPriceHistory).filter(
-            ListingPriceHistory.listing_id == "test-repo-1"
-        ).all()
+        history = clean_db.query(ListingPriceHistory).filter(ListingPriceHistory.listing_id == "test-repo-1").all()
         assert len(history) == 0
 
     def test_multiple_price_changes(self, clean_db):
@@ -101,9 +97,12 @@ class TestPriceHistory:
         upsert_listings(clean_db, [_listing(price=190000)])
         upsert_listings(clean_db, [_listing(price=185000)])
 
-        history = clean_db.query(ListingPriceHistory).filter(
-            ListingPriceHistory.listing_id == "test-repo-1"
-        ).order_by(ListingPriceHistory.id).all()
+        history = (
+            clean_db.query(ListingPriceHistory)
+            .filter(ListingPriceHistory.listing_id == "test-repo-1")
+            .order_by(ListingPriceHistory.id)
+            .all()
+        )
         assert len(history) == 2
         assert history[0].price == 190000
         assert history[1].price == 185000
@@ -162,10 +161,15 @@ class TestRawData:
         assert row.raw_html == "<html>v2</html>"
 
     def test_stores_both_json_and_html(self, clean_db):
-        upsert_listings(clean_db, [_listing(
-            _raw_json={"id": 1},
-            _raw_html="<html>full</html>",
-        )])
+        upsert_listings(
+            clean_db,
+            [
+                _listing(
+                    _raw_json={"id": 1},
+                    _raw_html="<html>full</html>",
+                )
+            ],
+        )
 
         row = clean_db.query(RawData).filter(RawData.listing_id == "test-repo-1").first()
         assert row.raw_json["id"] == 1
@@ -180,10 +184,13 @@ class TestEmptyInput:
 
 class TestDeactivateMissing:
     def test_deactivates_missing_listing(self, clean_db):
-        upsert_listings(clean_db, [
-            _listing(id="stay", url="https://example.com/stay"),
-            _listing(id="gone", url="https://example.com/gone"),
-        ])
+        upsert_listings(
+            clean_db,
+            [
+                _listing(id="stay", url="https://example.com/stay"),
+                _listing(id="gone", url="https://example.com/gone"),
+            ],
+        )
 
         deactivate_missing(clean_db, "imovirtual", ["stay"])
 
@@ -220,10 +227,13 @@ class TestDeactivateMissing:
         deactivate_missing(clean_db, "imovirtual", [])
 
     def test_all_still_active(self, clean_db):
-        upsert_listings(clean_db, [
-            _listing(id="a1", url="https://example.com/a1"),
-            _listing(id="a2", url="https://example.com/a2"),
-        ])
+        upsert_listings(
+            clean_db,
+            [
+                _listing(id="a1", url="https://example.com/a1"),
+                _listing(id="a2", url="https://example.com/a2"),
+            ],
+        )
         deactivate_missing(clean_db, "imovirtual", ["a1", "a2"])
 
         for lid in ["a1", "a2"]:
@@ -235,7 +245,6 @@ class TestSanitizeUrl:
     def test_strips_hpr_from_full_url(self):
         url = "https://www.imovirtual.com/hpr/pt/anuncio/apartamento-t1-ID123"
         assert _sanitize_url(url) == "https://www.imovirtual.com/pt/anuncio/apartamento-t1-ID123"
-
 
     def test_clean_url_unchanged(self):
         url = "https://www.imovirtual.com/pt/anuncio/apartamento-t1-ID123"
@@ -332,15 +341,21 @@ class TestIsDeleted:
         assert clean_db.query(Listing).filter_by(id="test-repo-1").first().price == 180000
 
     def test_only_deleted_listing_is_skipped_others_proceed(self, clean_db):
-        upsert_listings(clean_db, [
-            _listing(id="keep", url="https://example.com/keep", price=200000),
-            _listing(id="del",  url="https://example.com/del",  price=200000),
-        ])
+        upsert_listings(
+            clean_db,
+            [
+                _listing(id="keep", url="https://example.com/keep", price=200000),
+                _listing(id="del", url="https://example.com/del", price=200000),
+            ],
+        )
         self._mark_deleted(clean_db, "del")
-        upsert_listings(clean_db, [
-            _listing(id="keep", url="https://example.com/keep", price=111000),
-            _listing(id="del",  url="https://example.com/del",  price=111000),
-        ])
+        upsert_listings(
+            clean_db,
+            [
+                _listing(id="keep", url="https://example.com/keep", price=111000),
+                _listing(id="del", url="https://example.com/del", price=111000),
+            ],
+        )
         clean_db.expire_all()
         assert clean_db.query(Listing).filter_by(id="keep").first().price == 111000
         assert clean_db.query(Listing).filter_by(id="del").first().price == 200000
@@ -354,5 +369,3 @@ class TestIsDeleted:
         row = clean_db.query(Listing).filter_by(id="del").first()
         assert row.active is True  # untouched
         assert row.inactive_since is None  # untouched
-
-

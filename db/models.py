@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, Float, Boolean, TIMESTAMP, Text, ForeignKey
+from sqlalchemy import TIMESTAMP, Boolean, Column, Float, ForeignKey, Integer, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql import func
@@ -65,6 +65,3 @@ class RawData(Base):
     captured_at = Column(TIMESTAMP, server_default=func.now())
 
     listing = relationship("Listing", back_populates="raw")
-
-
-

@@ -1,4 +1,4 @@
-from scraper.imovirtual.parser import parse_listing, parse, build_url, extract_id, build_location
+from scraper.imovirtual.parser import build_location, build_url, extract_id, parse, parse_listing
 from tests.conftest import make_item, make_response
 
 
@@ -20,11 +20,13 @@ class TestBuildUrl:
 
 class TestBuildLocation:
     def _loc(self, street=None, city=None, province=None):
-        return {"address": {
-            "street": {"name": street} if street else {},
-            "city": {"name": city} if city else {},
-            "province": {"name": province} if province else {},
-        }}
+        return {
+            "address": {
+                "street": {"name": street} if street else {},
+                "city": {"name": city} if city else {},
+                "province": {"name": province} if province else {},
+            }
+        }
 
     def test_full_location(self):
         location, neighborhood, city = build_location(self._loc("Rua A", "Paranhos", "Porto"))
@@ -84,7 +86,6 @@ class TestParseListing:
             result = parse_listing(make_item(roomsNumber=rooms))
             assert result["typology"] == expected
 
-
     def test_no_price_returns_none(self):
         assert parse_listing(make_item(totalPrice=None)) is None
 
@@ -101,17 +102,21 @@ class TestParseListing:
         assert parse_listing(make_item(href="")) is None
 
     def test_is_rented_with_keywords(self):
-        result = parse_listing(make_item(
-            title="Apartamento arrendado",
-            shortDescription="Com inquilino estável",
-        ))
+        result = parse_listing(
+            make_item(
+                title="Apartamento arrendado",
+                shortDescription="Com inquilino estável",
+            )
+        )
         assert result["is_rented"] is True
 
     def test_is_rented_without_keywords(self):
-        result = parse_listing(make_item(
-            title="Apartamento T2",
-            shortDescription="Vista mar",
-        ))
+        result = parse_listing(
+            make_item(
+                title="Apartamento T2",
+                shortDescription="Vista mar",
+            )
+        )
         assert result["is_rented"] is False
 
     def test_has_garage_from_tags(self):
@@ -124,18 +129,19 @@ class TestParseListing:
         assert parse_listing(make_item(tags=[], features=["Garden"]))["has_garage"] is False
 
     def test_missing_optional_fields(self):
-        result = parse_listing(make_item(
-            areaInSquareMeters=None,
-            pricePerSquareMeter=None,
-            floorNumber=None,
-            roomsNumber=None,
-            investmentState=None,
-        ))
+        result = parse_listing(
+            make_item(
+                areaInSquareMeters=None,
+                pricePerSquareMeter=None,
+                floorNumber=None,
+                roomsNumber=None,
+                investmentState=None,
+            )
+        )
         assert result["area"] is None
         assert result["price_per_m2"] is None
         assert result["floor"] is None
         assert result["typology"] is None
-
 
     def test_lifetime_rent_defaults_false(self):
         result = parse_listing(make_item())
@@ -158,11 +164,10 @@ class TestParse:
         b = make_item(id=2, href="[lang]/ad/b-ID2")
         listings = parse([make_response(a, b)])
         assert len(listings) == 2
-        assert {l["id"] for l in listings} == {"1", "2"}
+        assert {listing["id"] for listing in listings} == {"1", "2"}
 
     def test_filters_out_invalid_items(self):
         valid = make_item()
         no_price = make_item(id=2, totalPrice=None)
         listings = parse([make_response(valid, no_price)])
         assert len(listings) == 1
-

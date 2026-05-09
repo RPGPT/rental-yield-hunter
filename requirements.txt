@@ -5,3 +5,5 @@ sqlalchemy
 alembic
 pytest
 testcontainers[postgres]
+ruff
+pre-commit

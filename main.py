@@ -2,7 +2,7 @@ import argparse
 import logging
 
 from db.client import Session
-from db.repository import upsert_listings, deactivate_missing
+from db.repository import deactivate_missing, upsert_listings
 from scraper.imovirtual import ImovirtualScraper
 
 logging.basicConfig(
@@ -30,7 +30,7 @@ def run(source: str):
     db = Session()
     try:
         upsert_listings(db, listings)
-        deactivate_missing(db, source, [l["id"] for l in listings])
+        deactivate_missing(db, source, [listing["id"] for listing in listings])
         logger.info("Done — %d listings upserted from %s", len(listings), source)
     finally:
         db.close()

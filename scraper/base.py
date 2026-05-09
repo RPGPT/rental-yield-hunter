@@ -3,12 +3,10 @@ from abc import ABC, abstractmethod
 
 class Scraper(ABC):
     @abstractmethod
-    def fetch(self) -> list[dict]:
-        ...
+    def fetch(self) -> list[dict]: ...
 
     @abstractmethod
-    def parse(self, responses: list[dict]) -> list[dict]:
-        ...
+    def parse(self, responses: list[dict]) -> list[dict]: ...
 
     def enrich(self, listings: list[dict]) -> list[dict]:
         return listings

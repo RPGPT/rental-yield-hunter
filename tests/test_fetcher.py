@@ -1,7 +1,7 @@
 import json
 from unittest.mock import MagicMock, patch
 
-from scraper.imovirtual.fetcher import extract_next_data, min_price, fetch_details
+from scraper.imovirtual.fetcher import extract_next_data, fetch_details, min_price
 
 
 def _detail_html(description="Some description"):
@@ -47,21 +47,30 @@ class TestMinPrice:
         assert min_price([]) is None
 
 
+def _build_id_html(build_id: str) -> str:
+    return f'<script id="__NEXT_DATA__" type="application/json">{{"buildId":"{build_id}"}}</script>'
+
+
 class TestFetchIntegration:
     @patch("scraper.imovirtual.fetcher.curl_requests")
     @patch("scraper.imovirtual.fetcher.time")
     def test_stops_above_max_price(self, mock_time, mock_curl):
-        html_resp = MagicMock(status_code=200, text='<script id="__NEXT_DATA__" type="application/json">{"buildId":"test123"}</script>')
+        html_resp = MagicMock(status_code=200, text=_build_id_html("test123"))
         page1_resp = MagicMock(status_code=200)
         page1_resp.json.return_value = {
-            "pageProps": {"data": {"searchAds": {
-                "items": [{"totalPrice": {"value": 500000}}],
-                "pagination": {"totalPages": 10, "totalItems": 300},
-            }}}
+            "pageProps": {
+                "data": {
+                    "searchAds": {
+                        "items": [{"totalPrice": {"value": 500000}}],
+                        "pagination": {"totalPages": 10, "totalItems": 300},
+                    }
+                }
+            }
         }
         session = _mock_session(mock_curl, html_resp, page1_resp)
 
         from scraper.imovirtual.fetcher import fetch
+
         responses = fetch()
 
         assert len(responses) == 1
@@ -70,21 +79,26 @@ class TestFetchIntegration:
     @patch("scraper.imovirtual.fetcher.curl_requests")
     @patch("scraper.imovirtual.fetcher.time")
     def test_paginates_until_last_page(self, mock_time, mock_curl):
-        html_resp = MagicMock(status_code=200, text='<script id="__NEXT_DATA__" type="application/json">{"buildId":"b1"}</script>')
+        html_resp = MagicMock(status_code=200, text=_build_id_html("b1"))
 
         def make_page(page_num, total_pages=2):
             resp = MagicMock(status_code=200)
             resp.json.return_value = {
-                "pageProps": {"data": {"searchAds": {
-                    "items": [{"totalPrice": {"value": 100000 + page_num * 1000}}],
-                    "pagination": {"totalPages": total_pages, "totalItems": 70},
-                }}}
+                "pageProps": {
+                    "data": {
+                        "searchAds": {
+                            "items": [{"totalPrice": {"value": 100000 + page_num * 1000}}],
+                            "pagination": {"totalPages": total_pages, "totalItems": 70},
+                        }
+                    }
+                }
             }
             return resp
 
         _mock_session(mock_curl, html_resp, make_page(1), make_page(2))
 
         from scraper.imovirtual.fetcher import fetch
+
         assert len(fetch()) == 2
 
     @patch("scraper.imovirtual.fetcher.curl_requests")
@@ -92,6 +106,7 @@ class TestFetchIntegration:
         _mock_session(mock_curl, MagicMock(status_code=403))
 
         from scraper.imovirtual.fetcher import fetch
+
         assert fetch() == []
 
 

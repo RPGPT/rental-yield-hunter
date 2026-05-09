@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from config import MAX_PRICE, MIN_PRICE
-from scraper.imovirtual.constants import BASE_URL, SOURCE, ESTATE_MAP, ROOMS_MAP
+from scraper.imovirtual.constants import BASE_URL, ESTATE_MAP, ROOMS_MAP, SOURCE
 from scraper.utils import is_rented
 
 logger = logging.getLogger(__name__)
@@ -105,7 +105,7 @@ def parse(responses: list[dict]) -> list[dict]:
             seen.add(listing["id"])
             listings.append(listing)
 
-    rented = sum(1 for l in listings if l["is_rented"])
+    rented = sum(1 for listing in listings if listing["is_rented"])
     logger.info("Parsed %d unique listings — %d flagged as rented", len(listings), rented)
 
     return listings

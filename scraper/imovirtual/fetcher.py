@@ -63,12 +63,15 @@ def _get_build_id(session) -> Optional[str]:
 
 def _fetch_page(session, build_id: str, page: int) -> Optional[dict]:
     url = f"{BASE_URL}_next/data/{build_id}/{API_PATH}?page={page}&{SORT_PARAMS}"
-    resp = session.get(url, headers={
-        "Accept": "application/json",
-        "Accept-Language": "pt-PT,pt;q=0.9",
-        "Referer": SEARCH_URL,
-        "x-nextjs-data": "1",
-    })
+    resp = session.get(
+        url,
+        headers={
+            "Accept": "application/json",
+            "Accept-Language": "pt-PT,pt;q=0.9",
+            "Referer": SEARCH_URL,
+            "x-nextjs-data": "1",
+        },
+    )
 
     if resp.status_code != 200:
         logger.error("Page %d returned status %d", page, resp.status_code)
@@ -78,10 +81,13 @@ def _fetch_page(session, build_id: str, page: int) -> Optional[dict]:
 
 
 def _fetch_detail(session, url: str) -> tuple[Optional[str], Optional[str]]:
-    resp = session.get(url, headers={
-        "Accept": "text/html",
-        "Accept-Language": "pt-PT,pt;q=0.9",
-    })
+    resp = session.get(
+        url,
+        headers={
+            "Accept": "text/html",
+            "Accept-Language": "pt-PT,pt;q=0.9",
+        },
+    )
 
     if resp.status_code != 200:
         return None, None
@@ -118,7 +124,10 @@ def fetch() -> list[dict]:
         responses.append(search_data)
         logger.info(
             "Page %d/%d: %d listings (total: %d, min: %s)",
-            page, total_pages, len(items), total_items,
+            page,
+            total_pages,
+            len(items),
+            total_items,
             f"{cheapest}€" if cheapest else "?",
         )
 

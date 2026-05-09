@@ -1,0 +1,2 @@
+# Linting and formatting is enforced via .git/hooks/pre-commit (auto-fix + auto-stage).
+# Run manually: python3 -m ruff check --fix . && python3 -m ruff format .

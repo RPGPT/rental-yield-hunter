@@ -1,10 +1,10 @@
-from unittest.mock import MagicMock, patch
 import json
+from unittest.mock import MagicMock, patch
 
 from db.models import Listing, ListingPriceHistory, RawData
 from db.repository import upsert_listings
-from scraper.imovirtual.parser import parse
 from scraper.imovirtual.fetcher import fetch_details
+from scraper.imovirtual.parser import parse
 from tests.conftest import make_item
 
 
@@ -30,18 +30,29 @@ def _html_with_build_id(build_id="test-build-123"):
 
 
 class TestFullPipeline:
-
     @patch("scraper.imovirtual.fetcher.curl_requests")
     @patch("scraper.imovirtual.fetcher.time")
     def test_scrape_stores_listings_in_db(self, mock_time, mock_curl, clean_db):
         items = [
-            make_item(id=1001, href="[lang]/ad/apt-a-ID1001", title="Apt A",
-                      totalPrice={"value": 195000}, estate="FLAT", roomsNumber="TWO",
-                      shortDescription="Arrendado com inquilino"),
-            make_item(id=1002, href="[lang]/ad/apt-b-ID1002", title="Apt B",
-                      totalPrice={"value": 250000}, estate="HOUSE", roomsNumber="THREE",
-                      tags=["PARKING_SPOT"],
-                      shortDescription="Vista mar, bom estado"),
+            make_item(
+                id=1001,
+                href="[lang]/ad/apt-a-ID1001",
+                title="Apt A",
+                totalPrice={"value": 195000},
+                estate="FLAT",
+                roomsNumber="TWO",
+                shortDescription="Arrendado com inquilino",
+            ),
+            make_item(
+                id=1002,
+                href="[lang]/ad/apt-b-ID1002",
+                title="Apt B",
+                totalPrice={"value": 250000},
+                estate="HOUSE",
+                roomsNumber="THREE",
+                tags=["PARKING_SPOT"],
+                shortDescription="Vista mar, bom estado",
+            ),
         ]
 
         session = MagicMock()
@@ -53,6 +64,7 @@ class TestFullPipeline:
         session.get.side_effect = [html_resp, api_resp]
 
         from scraper.imovirtual.fetcher import fetch
+
         responses = fetch()
         listings = parse(responses)
         upsert_listings(clean_db, listings)
@@ -91,6 +103,7 @@ class TestFullPipeline:
         session.get.side_effect = [html_resp, api_v1]
 
         from scraper.imovirtual.fetcher import fetch
+
         upsert_listings(clean_db, parse(fetch()))
 
         row = clean_db.query(Listing).filter(Listing.id == "2001").first()
@@ -107,9 +120,7 @@ class TestFullPipeline:
         row = clean_db.query(Listing).filter(Listing.id == "2001").first()
         assert row.price == 185000
 
-        history = clean_db.query(ListingPriceHistory).filter(
-            ListingPriceHistory.listing_id == "2001"
-        ).all()
+        history = clean_db.query(ListingPriceHistory).filter(ListingPriceHistory.listing_id == "2001").all()
         assert len(history) == 1
         assert history[0].price == 185000
 
@@ -127,6 +138,7 @@ class TestFullPipeline:
         session.get.side_effect = [html_resp, api_resp]
 
         from scraper.imovirtual.fetcher import fetch
+
         upsert_listings(clean_db, parse(fetch()))
 
         raw = clean_db.query(RawData).filter(RawData.listing_id == "3001").first()
@@ -151,6 +163,7 @@ class TestFullPipeline:
         session.get.side_effect = [html_resp, page1, page2]
 
         from scraper.imovirtual.fetcher import fetch
+
         listings = parse(fetch())
         upsert_listings(clean_db, listings)
 
@@ -172,6 +185,7 @@ class TestFullPipeline:
         session.get.side_effect = [html_resp, api_resp]
 
         from scraper.imovirtual.fetcher import fetch
+
         listings = parse(fetch())
         upsert_listings(clean_db, listings)
 
@@ -193,6 +207,7 @@ class TestFullPipeline:
         session.get.side_effect = [html_resp, api1]
 
         from scraper.imovirtual.fetcher import fetch
+
         upsert_listings(clean_db, parse(fetch()))
         first_seen = clean_db.query(Listing).filter(Listing.id == "6001").first().first_seen
 
@@ -210,7 +225,8 @@ class TestFullPipeline:
     @patch("scraper.imovirtual.fetcher.time")
     def test_lifetime_rent_via_enrich(self, mock_time, mock_curl, clean_db):
         item = make_item(
-            id=7001, href="[lang]/ad/vit-ID7001",
+            id=7001,
+            href="[lang]/ad/vit-ID7001",
             title="Apartamento arrendado",
             shortDescription="Com inquilino",
         )
@@ -224,6 +240,7 @@ class TestFullPipeline:
         session.get.side_effect = [html_resp, api_resp]
 
         from scraper.imovirtual.fetcher import fetch
+
         listings = parse(fetch())
         assert listings[0]["is_rented"] is True
 
@@ -247,4 +264,3 @@ class TestFullPipeline:
         raw = clean_db.query(RawData).filter(RawData.listing_id == "7001").first()
         assert raw.raw_html is not None
         assert raw.raw_json is not None
-
