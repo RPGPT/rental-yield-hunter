@@ -139,7 +139,7 @@ def fetch_details(listings: list[dict]) -> list[dict]:
         return listings
 
     session = curl_requests.Session(impersonate="chrome")
-    fetched = 0
+    enriched = 0
 
     for i, listing in enumerate(listings):
         url = listing.get("url", "")
@@ -151,14 +151,16 @@ def fetch_details(listings: list[dict]) -> list[dict]:
             listing["description"] = description
             listing["is_rented"] = is_rented(f"{listing.get('title', '')} {description}")
             listing["lifetime_rent"] = _is_lifetime_rent(description)
+            enriched += 1
+        else:
+            listing["is_rented"] = is_rented(listing.get("title", ""))
         if html:
             listing["_raw_html"] = html
-            fetched += 1
 
         if (i + 1) % 50 == 0:
             logger.info("Detail %d/%d fetched", i + 1, len(listings))
 
         time.sleep(REQUEST_DELAY)
 
-    logger.info("Fetched %d/%d listing detail pages", fetched, len(listings))
+    logger.info("Enriched %d/%d listings with full description", enriched, len(listings))
     return listings
