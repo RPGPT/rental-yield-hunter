@@ -12,9 +12,15 @@ from scraper.utils import is_rented
 
 logger = logging.getLogger(__name__)
 
-SEARCH_URL = BASE_URL + "comprar/apartamento/porto/"
-API_PATH = "pt/resultados/comprar/apartamento/porto/porto.json"
 SORT_PARAMS = "by=PRICE&direction=ASC"
+
+
+def _search_url(city_slug: str) -> str:
+    return f"{BASE_URL}comprar/apartamento/porto/{city_slug}/"
+
+
+def _api_path(city_slug: str) -> str:
+    return f"pt/resultados/comprar/apartamento/porto/{city_slug}.json"
 
 
 def extract_next_data(html: str) -> Optional[dict]:
@@ -41,9 +47,9 @@ def _is_lifetime_rent(text: str) -> bool:
     return "vitalicio" in stripped or "vitalicia" in stripped
 
 
-def _get_build_id(session) -> Optional[str]:
+def _get_build_id(session, search_url: str) -> Optional[str]:
     resp = session.get(
-        SEARCH_URL,
+        search_url,
         headers={"Accept": "text/html", "Accept-Language": "pt-PT,pt;q=0.9"},
     )
     if resp.status_code != 200:
@@ -61,14 +67,14 @@ def _get_build_id(session) -> Optional[str]:
     return build_id
 
 
-def _fetch_page(session, build_id: str, page: int) -> Optional[dict]:
-    url = f"{BASE_URL}_next/data/{build_id}/{API_PATH}?page={page}&{SORT_PARAMS}"
+def _fetch_page(session, build_id: str, api_path: str, search_url: str, page: int) -> Optional[dict]:
+    url = f"{BASE_URL}_next/data/{build_id}/{api_path}?page={page}&{SORT_PARAMS}"
     resp = session.get(
         url,
         headers={
             "Accept": "application/json",
             "Accept-Language": "pt-PT,pt;q=0.9",
-            "Referer": SEARCH_URL,
+            "Referer": search_url,
             "x-nextjs-data": "1",
         },
     )
@@ -125,10 +131,12 @@ def verify_still_active(id_url_pairs: list[tuple[str, str]]) -> set[str]:
     return still_active
 
 
-def fetch() -> list[dict]:
+def fetch(city_slug: str) -> list[dict]:
+    search_url = _search_url(city_slug)
+    api_path = _api_path(city_slug)
     session = curl_requests.Session(impersonate="chrome")
 
-    build_id = _get_build_id(session)
+    build_id = _get_build_id(session, search_url)
     if not build_id:
         return []
 
@@ -137,7 +145,7 @@ def fetch() -> list[dict]:
 
     while True:
         page += 1
-        search_data = _fetch_page(session, build_id, page)
+        search_data = _fetch_page(session, build_id, api_path, search_url, page)
         if not search_data:
             break
 
@@ -173,10 +181,17 @@ def fetch_details(listings: list[dict]) -> list[dict]:
     if not listings:
         return listings
 
+    # Only enrich listings already flagged as rented from title.
+    # A lifetime-rent listing will always have rental keywords in its title too,
+    # so we don't need to fetch details for every listing.
+    candidates = [listing for listing in listings if listing.get("is_rented")]
+    if not candidates:
+        return listings
+
     session = curl_requests.Session(impersonate="chrome")
     enriched = 0
 
-    for i, listing in enumerate(listings):
+    for i, listing in enumerate(candidates):
         url = listing.get("url", "")
         if not url:
             continue
@@ -192,10 +207,10 @@ def fetch_details(listings: list[dict]) -> list[dict]:
         if html:
             listing["_raw_html"] = html
 
-        if (i + 1) % 50 == 0:
-            logger.info("Detail %d/%d fetched", i + 1, len(listings))
+        if (i + 1) % 20 == 0:
+            logger.info("Detail %d/%d fetched", i + 1, len(candidates))
 
         time.sleep(REQUEST_DELAY)
 
-    logger.info("Enriched %d/%d listings with full description", enriched, len(listings))
+    logger.info("Enriched %d/%d rented candidates with full description", enriched, len(candidates))
     return listings

@@ -146,14 +146,20 @@ class TestParseListing:
     def test_filters_out_non_target_city(self):
         maia_item = make_item(
             location={
-                "address": {
-                    "street": {},
-                    "city": {"name": "Moreira"},
-                    "province": {"name": "Maia"},
-                }
+                "address": {"street": {}, "city": {"name": "Moreira"}, "province": {"name": "Maia"}},
+                "reverseGeocoding": {"locations": [{"locationLevel": "council", "name": "Maia"}]},
             }
         )
-        assert parse_listing(maia_item) is None
+        # parse_listing itself returns a listing; filtering happens in parse()
+        result = parse_listing(maia_item)
+        assert result is not None
+        assert result["city"] == "Maia"
+
+        # parse() with target_city should exclude it
+        from tests.conftest import make_response
+
+        listings = parse([make_response(maia_item)], target_city="Porto")
+        assert len(listings) == 0
 
     def test_missing_optional_fields(self):
         result = parse_listing(

@@ -65,7 +65,7 @@ class TestFullPipeline:
 
         from scraper.imovirtual.fetcher import fetch
 
-        responses = fetch()
+        responses = fetch("porto")
         listings = parse(responses)
         upsert_listings(clean_db, listings)
 
@@ -104,7 +104,7 @@ class TestFullPipeline:
 
         from scraper.imovirtual.fetcher import fetch
 
-        upsert_listings(clean_db, parse(fetch()))
+        upsert_listings(clean_db, parse(fetch("porto")))
 
         row = clean_db.query(Listing).filter(Listing.id == "2001").first()
         assert row.price == 200000
@@ -114,7 +114,7 @@ class TestFullPipeline:
         api_v2.json.return_value = _fake_api_page([item_v2])
         session.get.side_effect = [html_resp, api_v2]
 
-        upsert_listings(clean_db, parse(fetch()))
+        upsert_listings(clean_db, parse(fetch("porto")))
 
         clean_db.expire_all()
         row = clean_db.query(Listing).filter(Listing.id == "2001").first()
@@ -139,7 +139,7 @@ class TestFullPipeline:
 
         from scraper.imovirtual.fetcher import fetch
 
-        upsert_listings(clean_db, parse(fetch()))
+        upsert_listings(clean_db, parse(fetch("porto")))
 
         raw = clean_db.query(RawData).filter(RawData.listing_id == "3001").first()
         assert raw is not None
@@ -164,7 +164,7 @@ class TestFullPipeline:
 
         from scraper.imovirtual.fetcher import fetch
 
-        listings = parse(fetch())
+        listings = parse(fetch("porto"))
         upsert_listings(clean_db, listings)
 
         count = clean_db.query(Listing).filter(Listing.id == "4001").count()
@@ -186,7 +186,7 @@ class TestFullPipeline:
 
         from scraper.imovirtual.fetcher import fetch
 
-        listings = parse(fetch())
+        listings = parse(fetch("porto"))
         upsert_listings(clean_db, listings)
 
         assert clean_db.query(Listing).filter(Listing.id == "5001").count() == 1
@@ -208,7 +208,7 @@ class TestFullPipeline:
 
         from scraper.imovirtual.fetcher import fetch
 
-        upsert_listings(clean_db, parse(fetch()))
+        upsert_listings(clean_db, parse(fetch("porto")))
         first_seen = clean_db.query(Listing).filter(Listing.id == "6001").first().first_seen
 
         # Run 2
@@ -216,7 +216,7 @@ class TestFullPipeline:
         api2.json.return_value = _fake_api_page([item])
         session.get.side_effect = [html_resp, api2]
 
-        upsert_listings(clean_db, parse(fetch()))
+        upsert_listings(clean_db, parse(fetch("porto")))
         clean_db.expire_all()
 
         assert clean_db.query(Listing).filter(Listing.id == "6001").first().first_seen == first_seen
@@ -241,7 +241,7 @@ class TestFullPipeline:
 
         from scraper.imovirtual.fetcher import fetch
 
-        listings = parse(fetch())
+        listings = parse(fetch("porto"))
         assert listings[0]["is_rented"] is True
 
         ad = {"description": "Renda vitalicia garantida pelo contrato"}
