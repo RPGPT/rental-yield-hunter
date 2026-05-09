@@ -61,7 +61,6 @@ class RawData(Base):
 
     listing_id = Column(Text, ForeignKey("listings.id"), primary_key=True)
     raw_json = Column(JSONB)
-    raw_html = Column(Text)
     captured_at = Column(TIMESTAMP, server_default=func.now())
 
     listing = relationship("Listing", back_populates="raw")

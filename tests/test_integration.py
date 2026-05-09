@@ -1,4 +1,3 @@
-import json
 from unittest.mock import MagicMock, patch
 
 from db.models import Listing, ListingPriceHistory, RawData
@@ -244,13 +243,13 @@ class TestFullPipeline:
         listings = parse(fetch())
         assert listings[0]["is_rented"] is True
 
-        ad = {"description": "Renda vitalicia garantida pelo contrato"}
-        detail_data = json.dumps({"pageProps": {"ad": ad}}, ensure_ascii=False)
-        detail_html = f'<html><script id="__NEXT_DATA__" type="application/json">{detail_data}</script></html>'
-
         detail_session = MagicMock()
-        detail_resp = MagicMock(status_code=200, text=detail_html)
-        detail_session.get.return_value = detail_resp
+        build_id_resp = MagicMock(status_code=200, text=_html_with_build_id())
+        detail_resp = MagicMock(status_code=200)
+        detail_resp.json.return_value = {
+            "pageProps": {"ad": {"description": "Renda vitalicia garantida pelo contrato"}}
+        }
+        detail_session.get.side_effect = [build_id_resp, detail_resp]
         mock_curl.Session.return_value = detail_session
 
         enriched = fetch_details(listings)
@@ -262,5 +261,4 @@ class TestFullPipeline:
         assert "vitalicia" in row.description.lower()
 
         raw = clean_db.query(RawData).filter(RawData.listing_id == "7001").first()
-        assert raw.raw_html is not None
         assert raw.raw_json is not None

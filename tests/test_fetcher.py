@@ -4,12 +4,6 @@ from unittest.mock import MagicMock, patch
 from scraper.imovirtual.fetcher import extract_next_data, fetch_details, min_price
 
 
-def _detail_html(description="Some description"):
-    ad = {"description": description}
-    data = json.dumps({"pageProps": {"ad": ad}}, ensure_ascii=False)
-    return f'<html><script id="__NEXT_DATA__" type="application/json">{data}</script></html>'
-
-
 def _mock_session(mock_curl, *responses):
     session = MagicMock()
     mock_curl.Session.return_value = session
@@ -18,6 +12,16 @@ def _mock_session(mock_curl, *responses):
     else:
         session.get.side_effect = list(responses)
     return session
+
+
+def _build_id_html(build_id: str) -> str:
+    return f'<script id="__NEXT_DATA__" type="application/json">{{"buildId":"{build_id}"}}</script>'
+
+
+def _detail_json_mock(description: str):
+    mock = MagicMock(status_code=200)
+    mock.json.return_value = {"pageProps": {"ad": {"description": description}}}
+    return mock
 
 
 class TestExtractNextData:
@@ -45,10 +49,6 @@ class TestMinPrice:
 
     def test_returns_none_for_empty(self):
         assert min_price([]) is None
-
-
-def _build_id_html(build_id: str) -> str:
-    return f'<script id="__NEXT_DATA__" type="application/json">{{"buildId":"{build_id}"}}</script>'
 
 
 class TestFetchIntegration:
@@ -114,7 +114,11 @@ class TestFetchDetails:
     @patch("scraper.imovirtual.fetcher.curl_requests")
     @patch("scraper.imovirtual.fetcher.time")
     def test_sets_lifetime_rent_true(self, mock_time, mock_curl):
-        _mock_session(mock_curl, MagicMock(status_code=200, text=_detail_html("Renda vital\u00edcia garantida")))
+        _mock_session(
+            mock_curl,
+            MagicMock(status_code=200, text=_build_id_html("b1")),
+            _detail_json_mock("Renda vitalícia garantida"),
+        )
         result = fetch_details([{"url": "https://www.imovirtual.com/pt/anuncio/x", "title": "", "is_rented": True}])
 
         assert result[0]["lifetime_rent"] is True
@@ -123,7 +127,11 @@ class TestFetchDetails:
     @patch("scraper.imovirtual.fetcher.curl_requests")
     @patch("scraper.imovirtual.fetcher.time")
     def test_sets_lifetime_rent_false_without_keyword(self, mock_time, mock_curl):
-        _mock_session(mock_curl, MagicMock(status_code=200, text=_detail_html("Apartamento arrendado bom estado")))
+        _mock_session(
+            mock_curl,
+            MagicMock(status_code=200, text=_build_id_html("b1")),
+            _detail_json_mock("Apartamento arrendado bom estado"),
+        )
         result = fetch_details([{"url": "https://www.imovirtual.com/pt/anuncio/y", "title": "", "is_rented": True}])
 
         assert result[0]["lifetime_rent"] is False
@@ -131,7 +139,11 @@ class TestFetchDetails:
     @patch("scraper.imovirtual.fetcher.curl_requests")
     @patch("scraper.imovirtual.fetcher.time")
     def test_vitalicio_without_accent(self, mock_time, mock_curl):
-        _mock_session(mock_curl, MagicMock(status_code=200, text=_detail_html("Contrato vitalicio em vigor")))
+        _mock_session(
+            mock_curl,
+            MagicMock(status_code=200, text=_build_id_html("b1")),
+            _detail_json_mock("Contrato vitalicio em vigor"),
+        )
         result = fetch_details([{"url": "https://www.imovirtual.com/pt/anuncio/z", "title": "", "is_rented": True}])
 
         assert result[0]["lifetime_rent"] is True
@@ -139,7 +151,11 @@ class TestFetchDetails:
     @patch("scraper.imovirtual.fetcher.curl_requests")
     @patch("scraper.imovirtual.fetcher.time")
     def test_case_insensitive(self, mock_time, mock_curl):
-        _mock_session(mock_curl, MagicMock(status_code=200, text=_detail_html("RENDA VITAL\u00cdCIA")))
+        _mock_session(
+            mock_curl,
+            MagicMock(status_code=200, text=_build_id_html("b1")),
+            _detail_json_mock("RENDA VITALÍCIA"),
+        )
         result = fetch_details([{"url": "https://www.imovirtual.com/pt/anuncio/w", "title": "", "is_rented": True}])
 
         assert result[0]["lifetime_rent"] is True
@@ -147,7 +163,7 @@ class TestFetchDetails:
     @patch("scraper.imovirtual.fetcher.curl_requests")
     @patch("scraper.imovirtual.fetcher.time")
     def test_skips_non_rented_listings(self, mock_time, mock_curl):
-        session = _mock_session(mock_curl, MagicMock(status_code=200, text=_detail_html("Normal listing")))
+        session = _mock_session(mock_curl, MagicMock(status_code=200))
         listings = [
             {"url": "https://www.imovirtual.com/pt/anuncio/a", "title": "", "is_rented": False},
             {"url": "https://www.imovirtual.com/pt/anuncio/b", "title": "", "is_rented": False},
@@ -160,20 +176,25 @@ class TestFetchDetails:
 
     @patch("scraper.imovirtual.fetcher.curl_requests")
     @patch("scraper.imovirtual.fetcher.time")
-    def test_stores_raw_html(self, mock_time, mock_curl):
-        html = _detail_html("Test")
-        _mock_session(mock_curl, MagicMock(status_code=200, text=html))
-        result = fetch_details([{"url": "https://www.imovirtual.com/pt/anuncio/q", "title": "", "is_rented": True}])
+    def test_detail_error_falls_back_to_short_description(self, mock_time, mock_curl):
+        _mock_session(
+            mock_curl,
+            MagicMock(status_code=200, text=_build_id_html("b1")),
+            MagicMock(status_code=404),
+        )
+        short = "Apartamento arrendado"
+        result = fetch_details(
+            [
+                {
+                    "url": "https://www.imovirtual.com/pt/anuncio/gone",
+                    "title": "",
+                    "description": short,
+                    "is_rented": True,
+                }
+            ]
+        )
 
-        assert result[0]["_raw_html"] == html
-
-    @patch("scraper.imovirtual.fetcher.curl_requests")
-    @patch("scraper.imovirtual.fetcher.time")
-    def test_detail_error_no_crash(self, mock_time, mock_curl):
-        _mock_session(mock_curl, MagicMock(status_code=404))
-        result = fetch_details([{"url": "https://www.imovirtual.com/pt/anuncio/gone", "title": "", "is_rented": True}])
-
-        assert "description" not in result[0] or result[0].get("description") is None
+        assert result[0]["description"] == short
         assert "_raw_html" not in result[0]
 
     def test_empty_listings(self):
@@ -182,14 +203,18 @@ class TestFetchDetails:
     @patch("scraper.imovirtual.fetcher.curl_requests")
     @patch("scraper.imovirtual.fetcher.time")
     def test_only_rented_fetched_in_mixed_list(self, mock_time, mock_curl):
-        session = _mock_session(mock_curl, MagicMock(status_code=200, text=_detail_html("Arrendado vitalicio")))
+        session = _mock_session(
+            mock_curl,
+            MagicMock(status_code=200, text=_build_id_html("b1")),
+            _detail_json_mock("Arrendado vitalicio"),
+        )
         listings = [
             {"url": "https://www.imovirtual.com/pt/anuncio/a", "title": "", "is_rented": True},
             {"url": "https://www.imovirtual.com/pt/anuncio/b", "title": "", "is_rented": False},
         ]
         result = fetch_details(listings)
 
-        assert session.get.call_count == 1
+        assert session.get.call_count == 2  # 1 for build_id + 1 for the single rented detail
         assert result[0]["lifetime_rent"] is True
-        assert result[0]["_raw_html"] is not None
+        assert "_raw_html" not in result[0]
         assert "_raw_html" not in result[1]

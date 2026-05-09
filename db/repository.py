@@ -79,10 +79,9 @@ def upsert_listings(db: Session, listings: list[dict]):
         {
             "listing_id": listing["id"],
             "raw_json": listing.get("_raw_json"),
-            "raw_html": listing.get("_raw_html"),
         }
         for listing in listings
-        if listing.get("_raw_json") or listing.get("_raw_html")
+        if listing.get("_raw_json")
     ]
     if raw_rows:
         # Filter out deleted listings — don't update raw data for them either
@@ -93,7 +92,6 @@ def upsert_listings(db: Session, listings: list[dict]):
             index_elements=["listing_id"],
             set_={
                 "raw_json": raw_stmt.excluded.raw_json,
-                "raw_html": raw_stmt.excluded.raw_html,
                 "captured_at": text("NOW()"),
             },
         )

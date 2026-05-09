@@ -146,34 +146,18 @@ class TestRawData:
         row = clean_db.query(RawData).filter(RawData.listing_id == "test-repo-1").first()
         assert row is None
 
-    def test_stores_raw_html(self, clean_db):
-        upsert_listings(clean_db, [_listing(_raw_html="<html>test</html>")])
-
-        row = clean_db.query(RawData).filter(RawData.listing_id == "test-repo-1").first()
-        assert row is not None
-        assert row.raw_html == "<html>test</html>"
-
-    def test_updates_raw_html_on_rescrape(self, clean_db):
-        upsert_listings(clean_db, [_listing(_raw_html="<html>v1</html>")])
-        upsert_listings(clean_db, [_listing(_raw_html="<html>v2</html>")])
-
-        row = clean_db.query(RawData).filter(RawData.listing_id == "test-repo-1").first()
-        assert row.raw_html == "<html>v2</html>"
-
     def test_stores_both_json_and_html(self, clean_db):
         upsert_listings(
             clean_db,
             [
                 _listing(
                     _raw_json={"id": 1},
-                    _raw_html="<html>full</html>",
                 )
             ],
         )
 
         row = clean_db.query(RawData).filter(RawData.listing_id == "test-repo-1").first()
         assert row.raw_json["id"] == 1
-        assert row.raw_html == "<html>full</html>"
 
 
 class TestEmptyInput:

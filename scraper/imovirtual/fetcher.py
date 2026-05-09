@@ -80,23 +80,21 @@ def _fetch_page(session, build_id: str, page: int) -> Optional[dict]:
     return resp.json().get("pageProps", {}).get("data", {}).get("searchAds")
 
 
-def _fetch_detail(session, url: str) -> tuple[Optional[str], Optional[str]]:
+def _fetch_detail(session, url: str, build_id: str) -> Optional[str]:
+    path = url.replace(BASE_URL, "").lstrip("/")
+    api_url = f"{BASE_URL}_next/data/{build_id}/{path}.json"
     resp = session.get(
-        url,
+        api_url,
         headers={
-            "Accept": "text/html",
+            "Accept": "application/json",
             "Accept-Language": "pt-PT,pt;q=0.9",
+            "Referer": url,
+            "x-nextjs-data": "1",
         },
     )
-
-    if resp.status_code != 200:
-        return None, None
-
-    html = resp.text
-    data = extract_next_data(html)
-    description = (data or {}).get("pageProps", {}).get("ad", {}).get("description")
-
-    return description, html
+    if resp.status_code == 200:
+        return resp.json().get("pageProps", {}).get("ad", {}).get("description")
+    return None
 
 
 def fetch() -> list[dict]:
@@ -155,6 +153,10 @@ def fetch_details(listings: list[dict]) -> list[dict]:
         return listings
 
     session = curl_requests.Session(impersonate="chrome")
+    build_id = _get_build_id(session)
+    if not build_id:
+        logger.warning("Could not get buildId — skipping detail enrichment")
+        return listings
     enriched = 0
 
     for i, listing in enumerate(candidates):
@@ -162,7 +164,7 @@ def fetch_details(listings: list[dict]) -> list[dict]:
         if not url:
             continue
 
-        description, html = _fetch_detail(session, url)
+        description = _fetch_detail(session, url, build_id)
         if description:
             listing["description"] = description
             listing["is_rented"] = is_rented(f"{listing.get('title', '')} {description}")
@@ -172,8 +174,7 @@ def fetch_details(listings: list[dict]) -> list[dict]:
             enriched += 1
         else:
             listing["is_rented"] = is_rented(listing.get("title", ""))
-        if html:
-            listing["_raw_html"] = html
+            # Keep shortDescription already set by parser as the description fallback
 
         if (i + 1) % 20 == 0:
             logger.info("Detail %d/%d fetched", i + 1, len(candidates))
