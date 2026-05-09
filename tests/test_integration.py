@@ -6,8 +6,10 @@ from scraper.imovirtual.fetcher import fetch_details
 from scraper.imovirtual.parser import parse
 from tests.conftest import make_item
 
+BUILD_ID_HTML = '<script id="__NEXT_DATA__" type="application/json">{"buildId":"test-build-123"}</script>'
 
-def _fake_api_page(items, total_pages=1, page=1):
+
+def _page(items, total_pages=1, page=1):
     return {
         "pageProps": {
             "data": {
@@ -22,10 +24,6 @@ def _fake_api_page(items, total_pages=1, page=1):
             }
         }
     }
-
-
-def _html_with_build_id(build_id="test-build-123"):
-    return f'<script id="__NEXT_DATA__" type="application/json">{{"buildId":"{build_id}"}}</script>'
 
 
 class TestFullPipeline:
@@ -53,20 +51,15 @@ class TestFullPipeline:
                 shortDescription="Vista mar, bom estado",
             ),
         ]
-
         session = MagicMock()
         mock_curl.Session.return_value = session
-
-        html_resp = MagicMock(status_code=200, text=_html_with_build_id())
         api_resp = MagicMock(status_code=200)
-        api_resp.json.return_value = _fake_api_page(items)
-        session.get.side_effect = [html_resp, api_resp]
+        api_resp.json.return_value = _page(items)
+        session.get.side_effect = [MagicMock(status_code=200, text=BUILD_ID_HTML), api_resp]
 
         from scraper.imovirtual.fetcher import fetch
 
-        responses = fetch()
-        listings = parse(responses)
-        upsert_listings(clean_db, listings)
+        upsert_listings(clean_db, parse(fetch()))
 
         rows = clean_db.query(Listing).order_by(Listing.id).all()
         assert len(rows) == 2
@@ -88,37 +81,26 @@ class TestFullPipeline:
     @patch("scraper.imovirtual.fetcher.curl_requests")
     @patch("scraper.imovirtual.fetcher.time")
     def test_rescrape_updates_price_and_tracks_history(self, mock_time, mock_curl, clean_db):
-        item_v1 = make_item(id=2001, href="[lang]/ad/x-ID2001", totalPrice={"value": 200000})
-        item_v2 = make_item(id=2001, href="[lang]/ad/x-ID2001", totalPrice={"value": 185000})
-
         session = MagicMock()
         mock_curl.Session.return_value = session
 
-        html_resp = MagicMock(status_code=200, text=_html_with_build_id())
-
-        # Day 1
         api_v1 = MagicMock(status_code=200)
-        api_v1.json.return_value = _fake_api_page([item_v1])
-        session.get.side_effect = [html_resp, api_v1]
+        api_v1.json.return_value = _page([make_item(id=2001, href="[lang]/ad/x-ID2001", totalPrice={"value": 200000})])
+        session.get.side_effect = [MagicMock(status_code=200, text=BUILD_ID_HTML), api_v1]
 
         from scraper.imovirtual.fetcher import fetch
 
         upsert_listings(clean_db, parse(fetch()))
+        assert clean_db.query(Listing).filter(Listing.id == "2001").first().price == 200000
 
-        row = clean_db.query(Listing).filter(Listing.id == "2001").first()
-        assert row.price == 200000
-
-        # Day 2 — price dropped
         api_v2 = MagicMock(status_code=200)
-        api_v2.json.return_value = _fake_api_page([item_v2])
-        session.get.side_effect = [html_resp, api_v2]
+        api_v2.json.return_value = _page([make_item(id=2001, href="[lang]/ad/x-ID2001", totalPrice={"value": 185000})])
+        session.get.side_effect = [MagicMock(status_code=200, text=BUILD_ID_HTML), api_v2]
 
         upsert_listings(clean_db, parse(fetch()))
-
         clean_db.expire_all()
-        row = clean_db.query(Listing).filter(Listing.id == "2001").first()
-        assert row.price == 185000
 
+        assert clean_db.query(Listing).filter(Listing.id == "2001").first().price == 185000
         history = clean_db.query(ListingPriceHistory).filter(ListingPriceHistory.listing_id == "2001").all()
         assert len(history) == 1
         assert history[0].price == 185000
@@ -126,15 +108,11 @@ class TestFullPipeline:
     @patch("scraper.imovirtual.fetcher.curl_requests")
     @patch("scraper.imovirtual.fetcher.time")
     def test_raw_json_stored(self, mock_time, mock_curl, clean_db):
-        item = make_item(id=3001, href="[lang]/ad/z-ID3001")
-
         session = MagicMock()
         mock_curl.Session.return_value = session
-
-        html_resp = MagicMock(status_code=200, text=_html_with_build_id())
         api_resp = MagicMock(status_code=200)
-        api_resp.json.return_value = _fake_api_page([item])
-        session.get.side_effect = [html_resp, api_resp]
+        api_resp.json.return_value = _page([make_item(id=3001, href="[lang]/ad/z-ID3001")])
+        session.get.side_effect = [MagicMock(status_code=200, text=BUILD_ID_HTML), api_resp]
 
         from scraper.imovirtual.fetcher import fetch
 
@@ -147,73 +125,59 @@ class TestFullPipeline:
     @patch("scraper.imovirtual.fetcher.curl_requests")
     @patch("scraper.imovirtual.fetcher.time")
     def test_dedup_same_listing_different_pages(self, mock_time, mock_curl, clean_db):
-        item = make_item(id=4001, href="[lang]/ad/dup-ID4001")
-
         session = MagicMock()
         mock_curl.Session.return_value = session
-
-        html_resp = MagicMock(status_code=200, text=_html_with_build_id())
-
+        item = make_item(id=4001, href="[lang]/ad/dup-ID4001")
         page1 = MagicMock(status_code=200)
-        page1.json.return_value = _fake_api_page([item], total_pages=2, page=1)
+        page1.json.return_value = _page([item], total_pages=2, page=1)
         page2 = MagicMock(status_code=200)
-        page2.json.return_value = _fake_api_page([item], total_pages=2, page=2)
-
-        session.get.side_effect = [html_resp, page1, page2]
+        page2.json.return_value = _page([item], total_pages=2, page=2)
+        session.get.side_effect = [MagicMock(status_code=200, text=BUILD_ID_HTML), page1, page2]
 
         from scraper.imovirtual.fetcher import fetch
 
-        listings = parse(fetch())
-        upsert_listings(clean_db, listings)
-
-        count = clean_db.query(Listing).filter(Listing.id == "4001").count()
-        assert count == 1
+        upsert_listings(clean_db, parse(fetch()))
+        assert clean_db.query(Listing).filter(Listing.id == "4001").count() == 1
 
     @patch("scraper.imovirtual.fetcher.curl_requests")
     @patch("scraper.imovirtual.fetcher.time")
     def test_price_filter_excludes_expensive(self, mock_time, mock_curl, clean_db):
-        cheap = make_item(id=5001, href="[lang]/ad/c-ID5001", totalPrice={"value": 200000})
-        expensive = make_item(id=5002, href="[lang]/ad/e-ID5002", totalPrice={"value": 900000})
-
         session = MagicMock()
         mock_curl.Session.return_value = session
-
-        html_resp = MagicMock(status_code=200, text=_html_with_build_id())
         api_resp = MagicMock(status_code=200)
-        api_resp.json.return_value = _fake_api_page([cheap, expensive])
-        session.get.side_effect = [html_resp, api_resp]
+        api_resp.json.return_value = _page(
+            [
+                make_item(id=5001, href="[lang]/ad/c-ID5001", totalPrice={"value": 200000}),
+                make_item(id=5002, href="[lang]/ad/e-ID5002", totalPrice={"value": 900000}),
+            ]
+        )
+        session.get.side_effect = [MagicMock(status_code=200, text=BUILD_ID_HTML), api_resp]
 
         from scraper.imovirtual.fetcher import fetch
 
-        listings = parse(fetch())
-        upsert_listings(clean_db, listings)
-
+        upsert_listings(clean_db, parse(fetch()))
         assert clean_db.query(Listing).filter(Listing.id == "5001").count() == 1
         assert clean_db.query(Listing).filter(Listing.id == "5002").count() == 0
 
     @patch("scraper.imovirtual.fetcher.curl_requests")
     @patch("scraper.imovirtual.fetcher.time")
     def test_first_seen_preserved_across_runs(self, mock_time, mock_curl, clean_db):
-        item = make_item(id=6001, href="[lang]/ad/fs-ID6001")
-
         session = MagicMock()
         mock_curl.Session.return_value = session
-        html_resp = MagicMock(status_code=200, text=_html_with_build_id())
+        item = make_item(id=6001, href="[lang]/ad/fs-ID6001")
 
-        # Run 1
         api1 = MagicMock(status_code=200)
-        api1.json.return_value = _fake_api_page([item])
-        session.get.side_effect = [html_resp, api1]
+        api1.json.return_value = _page([item])
+        session.get.side_effect = [MagicMock(status_code=200, text=BUILD_ID_HTML), api1]
 
         from scraper.imovirtual.fetcher import fetch
 
         upsert_listings(clean_db, parse(fetch()))
         first_seen = clean_db.query(Listing).filter(Listing.id == "6001").first().first_seen
 
-        # Run 2
         api2 = MagicMock(status_code=200)
-        api2.json.return_value = _fake_api_page([item])
-        session.get.side_effect = [html_resp, api2]
+        api2.json.return_value = _page([item])
+        session.get.side_effect = [MagicMock(status_code=200, text=BUILD_ID_HTML), api2]
 
         upsert_listings(clean_db, parse(fetch()))
         clean_db.expire_all()
@@ -223,20 +187,20 @@ class TestFullPipeline:
     @patch("scraper.imovirtual.fetcher.curl_requests")
     @patch("scraper.imovirtual.fetcher.time")
     def test_lifetime_rent_via_enrich(self, mock_time, mock_curl, clean_db):
-        item = make_item(
-            id=7001,
-            href="[lang]/ad/vit-ID7001",
-            title="Apartamento arrendado",
-            shortDescription="Com inquilino",
-        )
-
         session = MagicMock()
         mock_curl.Session.return_value = session
-
-        html_resp = MagicMock(status_code=200, text=_html_with_build_id())
         api_resp = MagicMock(status_code=200)
-        api_resp.json.return_value = _fake_api_page([item])
-        session.get.side_effect = [html_resp, api_resp]
+        api_resp.json.return_value = _page(
+            [
+                make_item(
+                    id=7001,
+                    href="[lang]/ad/vit-ID7001",
+                    title="Apartamento arrendado",
+                    shortDescription="Com inquilino",
+                )
+            ]
+        )
+        session.get.side_effect = [MagicMock(status_code=200, text=BUILD_ID_HTML), api_resp]
 
         from scraper.imovirtual.fetcher import fetch
 
@@ -244,16 +208,14 @@ class TestFullPipeline:
         assert listings[0]["is_rented"] is True
 
         detail_session = MagicMock()
-        build_id_resp = MagicMock(status_code=200, text=_html_with_build_id())
+        mock_curl.Session.return_value = detail_session
         detail_resp = MagicMock(status_code=200)
         detail_resp.json.return_value = {
             "pageProps": {"ad": {"description": "Renda vitalicia garantida pelo contrato"}}
         }
-        detail_session.get.side_effect = [build_id_resp, detail_resp]
-        mock_curl.Session.return_value = detail_session
+        detail_session.get.side_effect = [MagicMock(status_code=200, text=BUILD_ID_HTML), detail_resp]
 
-        enriched = fetch_details(listings)
-        upsert_listings(clean_db, enriched)
+        upsert_listings(clean_db, fetch_details(listings))
 
         row = clean_db.query(Listing).filter(Listing.id == "7001").first()
         assert row.is_rented is True

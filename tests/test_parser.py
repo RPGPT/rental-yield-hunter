@@ -19,25 +19,32 @@ class TestBuildUrl:
 
 
 class TestBuildLocation:
-    def _loc(self, street=None, parish=None, council=None):
-        rev = []
-        if council:
-            rev.append({"locationLevel": "council", "name": council})
-        if parish:
-            rev.append({"locationLevel": "parish", "name": parish})
-        return {
-            "address": {"street": {"name": street} if street else {}},
-            "reverseGeocoding": {"locations": rev},
-        }
-
     def test_full_location(self):
-        location, neighborhood, city = build_location(self._loc("Rua A", "Paranhos", "Porto"))
+        loc = {
+            "address": {"street": {"name": "Rua A"}},
+            "reverseGeocoding": {
+                "locations": [
+                    {"locationLevel": "council", "name": "Porto"},
+                    {"locationLevel": "parish", "name": "Paranhos"},
+                ]
+            },
+        }
+        location, neighborhood, city = build_location(loc)
         assert location == "Rua A, Paranhos, Porto"
         assert neighborhood == "Paranhos"
         assert city == "Porto"
 
     def test_parish_maps_to_neighborhood(self):
-        _, neighborhood, city = build_location(self._loc(parish="Bonfim", council="Porto"))
+        loc = {
+            "address": {"street": {}},
+            "reverseGeocoding": {
+                "locations": [
+                    {"locationLevel": "council", "name": "Porto"},
+                    {"locationLevel": "parish", "name": "Bonfim"},
+                ]
+            },
+        }
+        _, neighborhood, city = build_location(loc)
         assert neighborhood == "Bonfim"
         assert city == "Porto"
 
@@ -74,8 +81,7 @@ class TestExtractId:
 
 class TestParseListing:
     def test_full_item(self):
-        item = make_item()
-        result = parse_listing(item)
+        result = parse_listing(make_item())
 
         assert result["id"] == "99999999"
         assert result["source"] == "imovirtual"
@@ -89,17 +95,15 @@ class TestParseListing:
         assert result["neighborhood"] == "Paranhos"
         assert result["city"] == "Porto"
         assert result["url"].startswith("https://www.imovirtual.com/pt/anuncio/")
-        assert result["_raw_json"] == item
+        assert result["_raw_json"] == make_item()
 
     def test_property_type_mapping(self):
         for estate, expected in [("FLAT", "apartment"), ("HOUSE", "house"), ("TERRAIN", "land")]:
-            result = parse_listing(make_item(estate=estate))
-            assert result["property_type"] == expected
+            assert parse_listing(make_item(estate=estate))["property_type"] == expected
 
     def test_typology_mapping(self):
         for rooms, expected in [("ONE", "T1"), ("THREE", "T3"), ("FIVE_OR_MORE", "T5+")]:
-            result = parse_listing(make_item(roomsNumber=rooms))
-            assert result["typology"] == expected
+            assert parse_listing(make_item(roomsNumber=rooms))["typology"] == expected
 
     def test_no_price_returns_none(self):
         assert parse_listing(make_item(totalPrice=None)) is None
@@ -117,21 +121,11 @@ class TestParseListing:
         assert parse_listing(make_item(href="")) is None
 
     def test_is_rented_with_keywords(self):
-        result = parse_listing(
-            make_item(
-                title="Apartamento arrendado",
-                shortDescription="Com inquilino estável",
-            )
-        )
+        result = parse_listing(make_item(title="Apartamento arrendado", shortDescription="Com inquilino estável"))
         assert result["is_rented"] is True
 
     def test_is_rented_without_keywords(self):
-        result = parse_listing(
-            make_item(
-                title="Apartamento T2",
-                shortDescription="Vista mar",
-            )
-        )
+        result = parse_listing(make_item(title="Apartamento T2", shortDescription="Vista mar"))
         assert result["is_rented"] is False
 
     def test_has_garage_from_tags(self):
@@ -154,13 +148,7 @@ class TestParseListing:
 
     def test_missing_optional_fields(self):
         result = parse_listing(
-            make_item(
-                areaInSquareMeters=None,
-                pricePerSquareMeter=None,
-                floorNumber=None,
-                roomsNumber=None,
-                investmentState=None,
-            )
+            make_item(areaInSquareMeters=None, pricePerSquareMeter=None, floorNumber=None, roomsNumber=None)
         )
         assert result["area"] is None
         assert result["price_per_m2"] is None
@@ -168,20 +156,17 @@ class TestParseListing:
         assert result["typology"] is None
 
     def test_lifetime_rent_defaults_false(self):
-        result = parse_listing(make_item())
-        assert result["lifetime_rent"] is False
+        assert parse_listing(make_item())["lifetime_rent"] is False
 
 
 class TestParse:
     def test_deduplication_by_id(self):
         item = make_item()
-        listings = parse([make_response(item, item)])
-        assert len(listings) == 1
+        assert len(parse([make_response(item, item)])) == 1
 
     def test_dedup_across_responses(self):
         item = make_item()
-        listings = parse([make_response(item), make_response(item)])
-        assert len(listings) == 1
+        assert len(parse([make_response(item), make_response(item)])) == 1
 
     def test_multiple_distinct_items(self):
         a = make_item(id=1, href="[lang]/ad/a-ID1")
@@ -193,5 +178,4 @@ class TestParse:
     def test_filters_out_invalid_items(self):
         valid = make_item()
         no_price = make_item(id=2, totalPrice=None)
-        listings = parse([make_response(valid, no_price)])
-        assert len(listings) == 1
+        assert len(parse([make_response(valid, no_price)])) == 1
