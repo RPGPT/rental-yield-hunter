@@ -54,7 +54,13 @@ def make_item(**overrides):
                 "street": {"name": "Rua de Costa Cabral"},
                 "city": {"name": "Paranhos"},
                 "province": {"name": "Porto"},
-            }
+            },
+            "reverseGeocoding": {
+                "locations": [
+                    {"locationLevel": "council", "name": "Porto"},
+                    {"locationLevel": "parish", "name": "Paranhos"},
+                ]
+            },
         },
         "href": "[lang]/ad/apartamento-t2-paranhos-ID99999999",
     }

@@ -19,13 +19,15 @@ class TestBuildUrl:
 
 
 class TestBuildLocation:
-    def _loc(self, street=None, city=None, province=None):
+    def _loc(self, street=None, parish=None, council=None):
+        rev = []
+        if council:
+            rev.append({"locationLevel": "council", "name": council})
+        if parish:
+            rev.append({"locationLevel": "parish", "name": parish})
         return {
-            "address": {
-                "street": {"name": street} if street else {},
-                "city": {"name": city} if city else {},
-                "province": {"name": province} if province else {},
-            }
+            "address": {"street": {"name": street} if street else {}},
+            "reverseGeocoding": {"locations": rev},
         }
 
     def test_full_location(self):
@@ -34,9 +36,22 @@ class TestBuildLocation:
         assert neighborhood == "Paranhos"
         assert city == "Porto"
 
-    def test_province_maps_to_city(self):
-        _, neighborhood, city = build_location(self._loc(city="Bonfim", province="Porto"))
+    def test_parish_maps_to_neighborhood(self):
+        _, neighborhood, city = build_location(self._loc(parish="Bonfim", council="Porto"))
         assert neighborhood == "Bonfim"
+        assert city == "Porto"
+
+    def test_falls_back_to_address_when_no_revgeo(self):
+        loc = {
+            "address": {
+                "street": {},
+                "city": {"name": "Paranhos"},
+                "province": {"name": "Porto"},
+            },
+            "reverseGeocoding": {"locations": []},
+        }
+        _, neighborhood, city = build_location(loc)
+        assert neighborhood == "Paranhos"
         assert city == "Porto"
 
     def test_empty_location(self):

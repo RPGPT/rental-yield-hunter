@@ -31,10 +31,16 @@ def extract_id(item: dict, url: str) -> Optional[str]:
 def build_location(location_obj: dict) -> tuple:
     addr = location_obj.get("address", {})
     street = addr.get("street", {}).get("name", "")
-    city = addr.get("city", {}).get("name", "")
-    province = addr.get("province", {}).get("name", "")
-    raw = ", ".join(p for p in [street, city, province] if p)
-    return raw, city or None, province or None
+
+    # reverseGeocoding is more reliable than address fields for city/neighborhood
+    rev_locations = location_obj.get("reverseGeocoding", {}).get("locations", [])
+    rev = {loc["locationLevel"]: loc["name"] for loc in rev_locations}
+
+    neighborhood = rev.get("parish") or addr.get("city", {}).get("name") or None
+    city = rev.get("council") or addr.get("province", {}).get("name") or None
+
+    raw = ", ".join(p for p in [street, neighborhood, city] if p)
+    return raw, neighborhood or None, city or None
 
 
 def parse_listing(item: dict) -> Optional[dict]:
