@@ -129,6 +129,9 @@ def deactivate_missing(db: Session, source: str, active_ids: list[str], verify_f
     if not candidates:
         return
 
+    # Release the DB connection before the potentially long verification loop
+    db.commit()
+
     # Verify each candidate is actually gone before deactivating
     if verify_fn is None:
         from scraper.imovirtual.fetcher import verify_still_active
