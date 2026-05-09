@@ -167,6 +167,8 @@ def fetch_details(listings: list[dict]) -> list[dict]:
             listing["description"] = description
             listing["is_rented"] = is_rented(f"{listing.get('title', '')} {description}")
             listing["lifetime_rent"] = _is_lifetime_rent(description)
+            if isinstance(listing.get("_raw_json"), dict):
+                listing["_raw_json"]["fullDescription"] = description
             enriched += 1
         else:
             listing["is_rented"] = is_rented(listing.get("title", ""))
