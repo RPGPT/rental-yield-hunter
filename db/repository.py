@@ -113,51 +113,18 @@ def _get_existing(db: Session, ids: list[str]) -> dict:
     return {r[0]: {"price": r[1], "is_deleted": r[2]} for r in rows}
 
 
-def deactivate_missing(db: Session, source: str, active_ids: list[str], verify_fn=None):
-    # Find candidates: currently active listings not seen in this scrape
-    candidates = db.execute(
+def deactivate_missing(db: Session, source: str, active_ids: list[str]):
+    result = db.execute(
         text("""
-            SELECT id, url FROM listings
+            UPDATE listings
+            SET active = false, inactive_since = NOW()
             WHERE source = :source
               AND active = true
               AND is_deleted = false
               AND id != ALL(:ids)
         """),
         {"source": source, "ids": active_ids},
-    ).fetchall()
-
-    if not candidates:
-        return
-
-    # Release the DB connection before the potentially long verification loop
-    db.commit()
-
-    # Verify each candidate is actually gone before deactivating
-    if verify_fn is None:
-        from scraper.imovirtual.fetcher import verify_still_active
-
-        verify_fn = verify_still_active
-
-    still_active = verify_fn([(row[0], row[1]) for row in candidates])
-    to_deactivate = [row[0] for row in candidates if row[0] not in still_active]
-
-    if still_active:
-        logger.info(
-            "%d/%d candidates verified still live — skipping deactivation",
-            len(still_active),
-            len(candidates),
-        )
-
-    if not to_deactivate:
-        return
-
-    result = db.execute(
-        text("""
-            UPDATE listings
-            SET active = false, inactive_since = NOW()
-            WHERE id = ANY(:ids)
-        """),
-        {"ids": to_deactivate},
     )
-    logger.info("Deactivated %d listings no longer found in %s", result.rowcount, source)
+    if result.rowcount:
+        logger.info("Deactivated %d listings no longer found in %s", result.rowcount, source)
     db.commit()

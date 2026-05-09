@@ -99,32 +99,6 @@ def _fetch_detail(session, url: str) -> tuple[Optional[str], Optional[str]]:
     return description, html
 
 
-def verify_still_active(id_url_pairs: list[tuple[str, str]]) -> set[str]:
-    """Check each listing URL and return the IDs that are still live on the site."""
-    if not id_url_pairs:
-        return set()
-
-    session = curl_requests.Session(impersonate="chrome")
-    still_active = set()
-
-    for i, (listing_id, url) in enumerate(id_url_pairs):
-        try:
-            resp = session.get(url, headers={"Accept": "text/html", "Accept-Language": "pt-PT,pt;q=0.9"})
-            if resp.status_code == 200:
-                data = extract_next_data(resp.text)
-                if (data or {}).get("pageProps", {}).get("ad"):
-                    still_active.add(listing_id)
-        except Exception:
-            logger.debug("Failed to verify listing %s", listing_id, exc_info=True)
-
-        if (i + 1) % 20 == 0:
-            logger.info("Verified %d/%d candidates", i + 1, len(id_url_pairs))
-
-        time.sleep(REQUEST_DELAY)
-
-    return still_active
-
-
 def fetch() -> list[dict]:
     session = curl_requests.Session(impersonate="chrome")
 
