@@ -29,15 +29,15 @@ def extract_id(item: dict, url: str) -> Optional[str]:
 
 
 def build_location(location_obj: dict) -> tuple:
-    addr = location_obj.get("address", {})
-    street = addr.get("street", {}).get("name", "")
+    addr = location_obj.get("address") or {}
+    street = (addr.get("street") or {}).get("name", "")
 
     # reverseGeocoding is more reliable than address fields for city/neighborhood
-    rev_locations = location_obj.get("reverseGeocoding", {}).get("locations", [])
+    rev_locations = (location_obj.get("reverseGeocoding") or {}).get("locations") or []
     rev = {loc["locationLevel"]: loc["name"] for loc in rev_locations}
 
-    neighborhood = rev.get("parish") or addr.get("city", {}).get("name") or None
-    city = rev.get("council") or addr.get("province", {}).get("name") or None
+    neighborhood = rev.get("parish") or (addr.get("city") or {}).get("name") or None
+    city = rev.get("council") or (addr.get("province") or {}).get("name") or None
 
     raw = ", ".join(p for p in [street, neighborhood, city] if p)
     return raw, neighborhood or None, city or None
