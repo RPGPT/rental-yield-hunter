@@ -12,15 +12,9 @@ from scraper.utils import is_rented
 
 logger = logging.getLogger(__name__)
 
+SEARCH_URL = BASE_URL + "comprar/apartamento/porto/"
+API_PATH = "pt/resultados/comprar/apartamento/porto/porto.json"
 SORT_PARAMS = "by=PRICE&direction=ASC"
-
-
-def _search_url(city_slug: str) -> str:
-    return f"{BASE_URL}comprar/apartamento/porto/{city_slug}/"
-
-
-def _api_path(city_slug: str) -> str:
-    return f"pt/resultados/comprar/apartamento/porto/{city_slug}.json"
 
 
 def extract_next_data(html: str) -> Optional[dict]:
@@ -47,9 +41,9 @@ def _is_lifetime_rent(text: str) -> bool:
     return "vitalicio" in stripped or "vitalicia" in stripped
 
 
-def _get_build_id(session, search_url: str) -> Optional[str]:
+def _get_build_id(session) -> Optional[str]:
     resp = session.get(
-        search_url,
+        SEARCH_URL,
         headers={"Accept": "text/html", "Accept-Language": "pt-PT,pt;q=0.9"},
     )
     if resp.status_code != 200:
@@ -67,14 +61,14 @@ def _get_build_id(session, search_url: str) -> Optional[str]:
     return build_id
 
 
-def _fetch_page(session, build_id: str, api_path: str, search_url: str, page: int) -> Optional[dict]:
-    url = f"{BASE_URL}_next/data/{build_id}/{api_path}?page={page}&{SORT_PARAMS}"
+def _fetch_page(session, build_id: str, page: int) -> Optional[dict]:
+    url = f"{BASE_URL}_next/data/{build_id}/{API_PATH}?page={page}&{SORT_PARAMS}"
     resp = session.get(
         url,
         headers={
             "Accept": "application/json",
             "Accept-Language": "pt-PT,pt;q=0.9",
-            "Referer": search_url,
+            "Referer": SEARCH_URL,
             "x-nextjs-data": "1",
         },
     )
@@ -131,12 +125,10 @@ def verify_still_active(id_url_pairs: list[tuple[str, str]]) -> set[str]:
     return still_active
 
 
-def fetch(city_slug: str) -> list[dict]:
-    search_url = _search_url(city_slug)
-    api_path = _api_path(city_slug)
+def fetch() -> list[dict]:
     session = curl_requests.Session(impersonate="chrome")
 
-    build_id = _get_build_id(session, search_url)
+    build_id = _get_build_id(session)
     if not build_id:
         return []
 
@@ -145,7 +137,7 @@ def fetch(city_slug: str) -> list[dict]:
 
     while True:
         page += 1
-        search_data = _fetch_page(session, build_id, api_path, search_url, page)
+        search_data = _fetch_page(session, build_id, page)
         if not search_data:
             break
 

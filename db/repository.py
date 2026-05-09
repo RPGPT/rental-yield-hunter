@@ -113,22 +113,18 @@ def _get_existing(db: Session, ids: list[str]) -> dict:
     return {r[0]: {"price": r[1], "is_deleted": r[2]} for r in rows}
 
 
-def deactivate_missing(db: Session, source: str, active_ids: list[str], city: str = None, verify_fn=None):
+def deactivate_missing(db: Session, source: str, active_ids: list[str], verify_fn=None):
     # Find candidates: currently active listings not seen in this scrape
-    # If city is given, scope to that city only (avoids deactivating other cities' listings)
-    query = """
-        SELECT id, url FROM listings
-        WHERE source = :source
-          AND active = true
-          AND is_deleted = false
-          AND id != ALL(:ids)
-    """
-    params: dict = {"source": source, "ids": active_ids}
-    if city:
-        query += "  AND city = :city\n"
-        params["city"] = city
-
-    candidates = db.execute(text(query), params).fetchall()
+    candidates = db.execute(
+        text("""
+            SELECT id, url FROM listings
+            WHERE source = :source
+              AND active = true
+              AND is_deleted = false
+              AND id != ALL(:ids)
+        """),
+        {"source": source, "ids": active_ids},
+    ).fetchall()
 
     if not candidates:
         return

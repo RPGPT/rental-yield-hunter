@@ -71,7 +71,7 @@ class TestFetchIntegration:
 
         from scraper.imovirtual.fetcher import fetch
 
-        responses = fetch("porto")
+        responses = fetch()
 
         assert len(responses) == 1
         assert session.get.call_count == 2
@@ -99,7 +99,7 @@ class TestFetchIntegration:
 
         from scraper.imovirtual.fetcher import fetch
 
-        assert len(fetch("porto")) == 2
+        assert len(fetch()) == 2
 
     @patch("scraper.imovirtual.fetcher.curl_requests")
     def test_returns_empty_on_failed_build_id(self, mock_curl):
@@ -107,7 +107,7 @@ class TestFetchIntegration:
 
         from scraper.imovirtual.fetcher import fetch
 
-        assert fetch("porto") == []
+        assert fetch() == []
 
 
 class TestFetchDetails:
