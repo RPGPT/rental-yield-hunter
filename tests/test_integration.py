@@ -7,6 +7,7 @@ from scraper.imovirtual.parser import parse
 from tests.conftest import make_item
 
 BUILD_ID_HTML = '<script id="__NEXT_DATA__" type="application/json">{"buildId":"test-build-123"}</script>'
+CITY = "Porto"
 
 
 def _page(items, total_pages=1, page=1):
@@ -59,7 +60,7 @@ class TestFullPipeline:
 
         from scraper.imovirtual.fetcher import fetch
 
-        upsert_listings(clean_db, parse(fetch()))
+        upsert_listings(clean_db, parse(fetch(CITY), CITY))
 
         rows = clean_db.query(Listing).order_by(Listing.id).all()
         assert len(rows) == 2
@@ -90,14 +91,14 @@ class TestFullPipeline:
 
         from scraper.imovirtual.fetcher import fetch
 
-        upsert_listings(clean_db, parse(fetch()))
+        upsert_listings(clean_db, parse(fetch(CITY), CITY))
         assert clean_db.query(Listing).filter(Listing.id == "2001").first().price == 200000
 
         api_v2 = MagicMock(status_code=200)
         api_v2.json.return_value = _page([make_item(id=2001, href="[lang]/ad/x-ID2001", totalPrice={"value": 185000})])
         session.get.side_effect = [MagicMock(status_code=200, text=BUILD_ID_HTML), api_v2]
 
-        upsert_listings(clean_db, parse(fetch()))
+        upsert_listings(clean_db, parse(fetch(CITY), CITY))
         clean_db.expire_all()
 
         assert clean_db.query(Listing).filter(Listing.id == "2001").first().price == 185000
@@ -116,7 +117,7 @@ class TestFullPipeline:
 
         from scraper.imovirtual.fetcher import fetch
 
-        upsert_listings(clean_db, parse(fetch()))
+        upsert_listings(clean_db, parse(fetch(CITY), CITY))
 
         raw = clean_db.query(RawData).filter(RawData.listing_id == "3001").first()
         assert raw is not None
@@ -136,7 +137,7 @@ class TestFullPipeline:
 
         from scraper.imovirtual.fetcher import fetch
 
-        upsert_listings(clean_db, parse(fetch()))
+        upsert_listings(clean_db, parse(fetch(CITY), CITY))
         assert clean_db.query(Listing).filter(Listing.id == "4001").count() == 1
 
     @patch("scraper.imovirtual.fetcher.curl_requests")
@@ -155,7 +156,7 @@ class TestFullPipeline:
 
         from scraper.imovirtual.fetcher import fetch
 
-        upsert_listings(clean_db, parse(fetch()))
+        upsert_listings(clean_db, parse(fetch(CITY), CITY))
         assert clean_db.query(Listing).filter(Listing.id == "5001").count() == 1
         assert clean_db.query(Listing).filter(Listing.id == "5002").count() == 0
 
@@ -172,14 +173,14 @@ class TestFullPipeline:
 
         from scraper.imovirtual.fetcher import fetch
 
-        upsert_listings(clean_db, parse(fetch()))
+        upsert_listings(clean_db, parse(fetch(CITY), CITY))
         first_seen = clean_db.query(Listing).filter(Listing.id == "6001").first().first_seen
 
         api2 = MagicMock(status_code=200)
         api2.json.return_value = _page([item])
         session.get.side_effect = [MagicMock(status_code=200, text=BUILD_ID_HTML), api2]
 
-        upsert_listings(clean_db, parse(fetch()))
+        upsert_listings(clean_db, parse(fetch(CITY), CITY))
         clean_db.expire_all()
 
         assert clean_db.query(Listing).filter(Listing.id == "6001").first().first_seen == first_seen
@@ -204,7 +205,7 @@ class TestFullPipeline:
 
         from scraper.imovirtual.fetcher import fetch
 
-        listings = parse(fetch())
+        listings = parse(fetch(CITY), CITY)
         assert listings[0]["is_rented"] is True
 
         detail_session = MagicMock()
@@ -215,7 +216,7 @@ class TestFullPipeline:
         }
         detail_session.get.side_effect = [MagicMock(status_code=200, text=BUILD_ID_HTML), detail_resp]
 
-        upsert_listings(clean_db, fetch_details(listings))
+        upsert_listings(clean_db, fetch_details(listings, CITY))
 
         row = clean_db.query(Listing).filter(Listing.id == "7001").first()
         assert row.is_rented is True

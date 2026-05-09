@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from config import MAX_PRICE, MIN_PRICE
-from scraper.imovirtual.constants import BASE_URL, ESTATE_MAP, ROOMS_MAP, SOURCE, TARGET_CITY
+from scraper.imovirtual.constants import BASE_URL, ESTATE_MAP, ROOMS_MAP, SOURCE
 from scraper.utils import is_rented
 
 logger = logging.getLogger(__name__)
@@ -43,7 +43,7 @@ def build_location(location_obj: dict) -> tuple:
     return raw, neighborhood or None, city or None
 
 
-def parse_listing(item: dict) -> Optional[dict]:
+def parse_listing(item: dict, target_city: Optional[str] = None) -> Optional[dict]:
     try:
         price_val = (item.get("totalPrice") or {}).get("value")
         if price_val is None:
@@ -66,7 +66,7 @@ def parse_listing(item: dict) -> Optional[dict]:
         area = item.get("areaInSquareMeters")
         ppm2 = (item.get("pricePerSquareMeter") or {}).get("value")
         location, neighborhood, city = build_location(item.get("location", {}))
-        if city and city != TARGET_CITY:
+        if target_city is not None and city and city != target_city:
             return None
         tags = item.get("tags") or []
         features = item.get("features") or []
@@ -102,13 +102,13 @@ def parse_listing(item: dict) -> Optional[dict]:
         return None
 
 
-def parse(responses: list[dict]) -> list[dict]:
+def parse(responses: list[dict], target_city: Optional[str] = None) -> list[dict]:
     seen = set()
     listings = []
 
     for response in responses:
         for item in response.get("items", []):
-            listing = parse_listing(item)
+            listing = parse_listing(item, target_city)
             if not listing or listing["id"] in seen:
                 continue
             seen.add(listing["id"])

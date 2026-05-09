@@ -144,7 +144,18 @@ class TestParseListing:
                 "reverseGeocoding": {"locations": [{"locationLevel": "council", "name": "Maia"}]},
             }
         )
-        assert parse_listing(maia_item) is None
+        # When target_city is Porto, Maia listings are filtered out
+        assert parse_listing(maia_item, target_city="Porto") is None
+
+    def test_no_target_city_filter_accepts_any_city(self):
+        maia_item = make_item(
+            location={
+                "address": {"street": {}, "city": {"name": "Moreira"}, "province": {"name": "Maia"}},
+                "reverseGeocoding": {"locations": [{"locationLevel": "council", "name": "Maia"}]},
+            }
+        )
+        # Without a target_city constraint all cities are accepted
+        assert parse_listing(maia_item, target_city=None) is not None
 
     def test_missing_optional_fields(self):
         result = parse_listing(
@@ -179,3 +190,31 @@ class TestParse:
         valid = make_item()
         no_price = make_item(id=2, totalPrice=None)
         assert len(parse([make_response(valid, no_price)])) == 1
+
+    def test_parse_with_target_city_filters_others(self):
+        porto_item = make_item(id=1, href="[lang]/ad/a-ID1")
+        maia_item = make_item(
+            id=2,
+            href="[lang]/ad/b-ID2",
+            location={
+                "address": {"street": {}, "city": {"name": "Moreira"}, "province": {"name": "Maia"}},
+                "reverseGeocoding": {"locations": [{"locationLevel": "council", "name": "Maia"}]},
+            },
+        )
+        listings = parse([make_response(porto_item, maia_item)], target_city="Porto")
+        assert len(listings) == 1
+        assert listings[0]["city"] == "Porto"
+
+    def test_parse_without_target_city_accepts_all(self):
+        porto_item = make_item(id=1, href="[lang]/ad/a-ID1")
+        maia_item = make_item(
+            id=2,
+            href="[lang]/ad/b-ID2",
+            location={
+                "address": {"street": {}, "city": {"name": "Moreira"}, "province": {"name": "Maia"}},
+                "reverseGeocoding": {"locations": [{"locationLevel": "council", "name": "Maia"}]},
+            },
+        )
+        listings = parse([make_response(porto_item, maia_item)], target_city=None)
+        assert len(listings) == 2
+        assert {listing["city"] for listing in listings} == {"Porto", "Maia"}

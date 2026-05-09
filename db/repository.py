@@ -111,18 +111,33 @@ def _get_existing(db: Session, ids: list[str]) -> dict:
     return {r[0]: {"price": r[1], "is_deleted": r[2]} for r in rows}
 
 
-def deactivate_missing(db: Session, source: str, active_ids: list[str]):
+def deactivate_missing(db: Session, source: str, active_ids: list[str], city: Optional[str] = None):
+    """Mark as inactive any listing from *source* (optionally scoped to *city*)
+    that was not present in the current scrape run.
+
+    Passing *city* is strongly recommended when scraping cities in parallel —
+    without it the UPDATE touches rows belonging to all cities of that source,
+    causing race conditions and incorrect deactivations.
+    """
+    params: dict = {"source": source, "ids": active_ids}
+    city_clause = ""
+    if city:
+        city_clause = "AND city = :city"
+        params["city"] = city
+
     result = db.execute(
-        text("""
+        text(f"""
             UPDATE listings
             SET active = false, inactive_since = NOW()
             WHERE source = :source
               AND active = true
               AND is_deleted = false
               AND id != ALL(:ids)
+              {city_clause}
         """),
-        {"source": source, "ids": active_ids},
+        params,
     )
+    label = f"{source} / {city}" if city else source
     if result.rowcount:
-        logger.info("Deactivated %d listings no longer found in %s", result.rowcount, source)
+        logger.info("Deactivated %d listings no longer found in %s", result.rowcount, label)
     db.commit()

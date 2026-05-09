@@ -4,11 +4,14 @@ from scraper.imovirtual.parser import parse
 
 
 class ImovirtualScraper(Scraper):
+    def __init__(self, city: str):
+        self.city = city
+
     def fetch(self):
-        return fetch()
+        return fetch(self.city)
 
     def parse(self, responses):
-        return parse(responses)
+        return parse(responses, target_city=self.city)
 
     def enrich(self, listings):
-        return fetch_details(listings)
+        return fetch_details(listings, self.city)

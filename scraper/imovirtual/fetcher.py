@@ -6,14 +6,12 @@ from typing import Optional
 
 from curl_cffi import requests as curl_requests
 
-from config import MAX_PRICE, REQUEST_DELAY
-from scraper.imovirtual.constants import BASE_URL
+from config import MAX_PRICE, REQUEST_DELAY, SUPPORTED_CITIES
+from scraper.imovirtual.constants import BASE_URL, CITY_PATHS
 from scraper.utils import is_rented
 
 logger = logging.getLogger(__name__)
 
-SEARCH_URL = BASE_URL + "comprar/apartamento/porto/"
-API_PATH = "pt/resultados/comprar/apartamento/porto/porto.json"
 SORT_PARAMS = "by=PRICE&direction=ASC"
 
 
@@ -41,9 +39,9 @@ def _is_lifetime_rent(text: str) -> bool:
     return "vitalicio" in stripped or "vitalicia" in stripped
 
 
-def _get_build_id(session) -> Optional[str]:
+def _get_build_id(session, search_url: str) -> Optional[str]:
     resp = session.get(
-        SEARCH_URL,
+        search_url,
         headers={"Accept": "text/html", "Accept-Language": "pt-PT,pt;q=0.9"},
     )
     if resp.status_code != 200:
@@ -61,14 +59,14 @@ def _get_build_id(session) -> Optional[str]:
     return build_id
 
 
-def _fetch_page(session, build_id: str, page: int) -> Optional[dict]:
-    url = f"{BASE_URL}_next/data/{build_id}/{API_PATH}?page={page}&{SORT_PARAMS}"
+def _fetch_page(session, build_id: str, api_path: str, search_url: str, page: int) -> Optional[dict]:
+    url = f"{BASE_URL}_next/data/{build_id}/{api_path}?page={page}&{SORT_PARAMS}"
     resp = session.get(
         url,
         headers={
             "Accept": "application/json",
             "Accept-Language": "pt-PT,pt;q=0.9",
-            "Referer": SEARCH_URL,
+            "Referer": search_url,
             "x-nextjs-data": "1",
         },
     )
@@ -97,10 +95,16 @@ def _fetch_detail(session, url: str, build_id: str) -> Optional[str]:
     return None
 
 
-def fetch() -> list[dict]:
+def fetch(city: str) -> list[dict]:
+    if city not in SUPPORTED_CITIES:
+        raise ValueError(f"Unsupported city: {city!r}. Supported: {SUPPORTED_CITIES}")
+
+    search_path, api_path = CITY_PATHS[city]
+    search_url = BASE_URL + search_path
+
     session = curl_requests.Session(impersonate="chrome")
 
-    build_id = _get_build_id(session)
+    build_id = _get_build_id(session, search_url)
     if not build_id:
         return []
 
@@ -109,7 +113,7 @@ def fetch() -> list[dict]:
 
     while True:
         page += 1
-        search_data = _fetch_page(session, build_id, page)
+        search_data = _fetch_page(session, build_id, api_path, search_url, page)
         if not search_data:
             break
 
@@ -121,7 +125,8 @@ def fetch() -> list[dict]:
 
         responses.append(search_data)
         logger.info(
-            "Page %d/%d: %d listings (total: %d, min: %s)",
+            "[%s] Page %d/%d: %d listings (total: %d, min: %s)",
+            city,
             page,
             total_pages,
             len(items),
@@ -130,7 +135,7 @@ def fetch() -> list[dict]:
         )
 
         if cheapest and cheapest > MAX_PRICE:
-            logger.info("Passed %d€ ceiling — stopping", MAX_PRICE)
+            logger.info("[%s] Passed %d€ ceiling — stopping", city, MAX_PRICE)
             break
 
         if page >= total_pages or not items:
@@ -141,19 +146,22 @@ def fetch() -> list[dict]:
     return responses
 
 
-def fetch_details(listings: list[dict]) -> list[dict]:
+def fetch_details(listings: list[dict], city: str) -> list[dict]:
     if not listings:
         return listings
 
-    # Only enrich listings already flagged as rented from title.
-    # A lifetime-rent listing will always have rental keywords in its title too,
-    # so we don't need to fetch details for every listing.
     candidates = [listing for listing in listings if listing.get("is_rented")]
     if not candidates:
         return listings
 
+    if city not in SUPPORTED_CITIES:
+        raise ValueError(f"Unsupported city: {city!r}. Supported: {SUPPORTED_CITIES}")
+
+    search_path, _ = CITY_PATHS[city]
+    search_url = BASE_URL + search_path
+
     session = curl_requests.Session(impersonate="chrome")
-    build_id = _get_build_id(session)
+    build_id = _get_build_id(session, search_url)
     if not build_id:
         logger.warning("Could not get buildId — skipping detail enrichment")
         return listings
@@ -174,12 +182,11 @@ def fetch_details(listings: list[dict]) -> list[dict]:
             enriched += 1
         else:
             listing["is_rented"] = is_rented(listing.get("title", ""))
-            # Keep shortDescription already set by parser as the description fallback
 
         if (i + 1) % 20 == 0:
-            logger.info("Detail %d/%d fetched", i + 1, len(candidates))
+            logger.info("[%s] Detail %d/%d fetched", city, i + 1, len(candidates))
 
         time.sleep(REQUEST_DELAY)
 
-    logger.info("Enriched %d/%d rented candidates with full description", enriched, len(candidates))
+    logger.info("[%s] Enriched %d/%d rented candidates with full description", city, enriched, len(candidates))
     return listings

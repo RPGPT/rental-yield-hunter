@@ -1,9 +1,12 @@
 import json
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from scraper.imovirtual.fetcher import extract_next_data, fetch_details, min_price
 
 BUILD_ID_HTML = '<script id="__NEXT_DATA__" type="application/json">{"buildId":"b1"}</script>'
+CITY = "Porto"
 
 
 class TestExtractNextData:
@@ -52,7 +55,7 @@ class TestFetchIntegration:
 
         from scraper.imovirtual.fetcher import fetch
 
-        assert len(fetch()) == 1
+        assert len(fetch(CITY)) == 1
         assert session.get.call_count == 2
 
     @patch("scraper.imovirtual.fetcher.curl_requests")
@@ -86,7 +89,7 @@ class TestFetchIntegration:
 
         from scraper.imovirtual.fetcher import fetch
 
-        assert len(fetch()) == 2
+        assert len(fetch(CITY)) == 2
 
     @patch("scraper.imovirtual.fetcher.curl_requests")
     def test_returns_empty_on_failed_build_id(self, mock_curl):
@@ -96,7 +99,13 @@ class TestFetchIntegration:
 
         from scraper.imovirtual.fetcher import fetch
 
-        assert fetch() == []
+        assert fetch(CITY) == []
+
+    def test_raises_on_unsupported_city(self):
+        from scraper.imovirtual.fetcher import fetch
+
+        with pytest.raises(ValueError, match="Unsupported city"):
+            fetch("Lisboa")
 
 
 class TestFetchDetails:
@@ -109,7 +118,8 @@ class TestFetchDetails:
         detail.json.return_value = {"pageProps": {"ad": {"description": "Renda vitalícia garantida"}}}
         session.get.side_effect = [MagicMock(status_code=200, text=BUILD_ID_HTML), detail]
 
-        result = fetch_details([{"url": "https://www.imovirtual.com/pt/anuncio/x", "title": "", "is_rented": True}])
+        listing = [{"url": "https://www.imovirtual.com/pt/anuncio/x", "title": "", "is_rented": True}]
+        result = fetch_details(listing, CITY)
 
         assert result[0]["lifetime_rent"] is True
         assert "vital" in result[0]["description"].lower()
@@ -123,7 +133,8 @@ class TestFetchDetails:
         detail.json.return_value = {"pageProps": {"ad": {"description": "Apartamento arrendado bom estado"}}}
         session.get.side_effect = [MagicMock(status_code=200, text=BUILD_ID_HTML), detail]
 
-        result = fetch_details([{"url": "https://www.imovirtual.com/pt/anuncio/y", "title": "", "is_rented": True}])
+        listing = [{"url": "https://www.imovirtual.com/pt/anuncio/y", "title": "", "is_rented": True}]
+        result = fetch_details(listing, CITY)
 
         assert result[0]["lifetime_rent"] is False
 
@@ -136,7 +147,8 @@ class TestFetchDetails:
         detail.json.return_value = {"pageProps": {"ad": {"description": "Contrato vitalicio em vigor"}}}
         session.get.side_effect = [MagicMock(status_code=200, text=BUILD_ID_HTML), detail]
 
-        result = fetch_details([{"url": "https://www.imovirtual.com/pt/anuncio/z", "title": "", "is_rented": True}])
+        listing = [{"url": "https://www.imovirtual.com/pt/anuncio/z", "title": "", "is_rented": True}]
+        result = fetch_details(listing, CITY)
 
         assert result[0]["lifetime_rent"] is True
 
@@ -149,7 +161,8 @@ class TestFetchDetails:
         detail.json.return_value = {"pageProps": {"ad": {"description": "RENDA VITALÍCIA"}}}
         session.get.side_effect = [MagicMock(status_code=200, text=BUILD_ID_HTML), detail]
 
-        result = fetch_details([{"url": "https://www.imovirtual.com/pt/anuncio/w", "title": "", "is_rented": True}])
+        listing = [{"url": "https://www.imovirtual.com/pt/anuncio/w", "title": "", "is_rented": True}]
+        result = fetch_details(listing, CITY)
 
         assert result[0]["lifetime_rent"] is True
 
@@ -163,7 +176,8 @@ class TestFetchDetails:
             [
                 {"url": "https://www.imovirtual.com/pt/anuncio/a", "title": "", "is_rented": False},
                 {"url": "https://www.imovirtual.com/pt/anuncio/b", "title": "", "is_rented": False},
-            ]
+            ],
+            CITY,
         )
 
         assert session.get.call_count == 0
@@ -183,13 +197,14 @@ class TestFetchDetails:
                     "description": "Apartamento arrendado",
                     "is_rented": True,
                 }
-            ]
+            ],
+            CITY,
         )
 
         assert result[0]["description"] == "Apartamento arrendado"
 
     def test_empty_listings(self):
-        assert fetch_details([]) == []
+        assert fetch_details([], CITY) == []
 
     @patch("scraper.imovirtual.fetcher.curl_requests")
     @patch("scraper.imovirtual.fetcher.time")
@@ -204,8 +219,13 @@ class TestFetchDetails:
             [
                 {"url": "https://www.imovirtual.com/pt/anuncio/a", "title": "", "is_rented": True},
                 {"url": "https://www.imovirtual.com/pt/anuncio/b", "title": "", "is_rented": False},
-            ]
+            ],
+            CITY,
         )
 
         assert session.get.call_count == 2
         assert result[0]["lifetime_rent"] is True
+
+    def test_raises_on_unsupported_city(self):
+        with pytest.raises(ValueError, match="Unsupported city"):
+            fetch_details([{"url": "https://x.com", "is_rented": True}], "Lisboa")
