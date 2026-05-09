@@ -7,6 +7,7 @@ class TestIsRented:
     @pytest.mark.parametrize("keyword", [
         "arrendado", "inquilino", "rentabilidade",
         "arrendamento", "renda", "rented", "yield", "tenant",
+        "alugado", "contrato de aluguer",
     ])
     def test_detects_each_keyword(self, keyword):
         assert is_rented(f"Apartamento {keyword} em Porto") is True
