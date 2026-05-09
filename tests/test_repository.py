@@ -5,6 +5,9 @@ from sqlalchemy import text
 from db.models import Listing, ListingPriceHistory, RawData
 from db.repository import _sanitize_url, deactivate_missing, upsert_listings
 
+# Stub verify_fn that treats all candidates as truly gone (no HTTP calls in tests)
+_all_gone = lambda pairs: set()  # noqa: E731
+
 
 def _listing(**overrides):
     now = datetime.now(timezone.utc)
@@ -192,7 +195,7 @@ class TestDeactivateMissing:
             ],
         )
 
-        deactivate_missing(clean_db, "imovirtual", ["stay"])
+        deactivate_missing(clean_db, "imovirtual", ["stay"], verify_fn=_all_gone)
 
         stay = clean_db.query(Listing).filter(Listing.id == "stay").first()
         assert stay.active is True
@@ -204,7 +207,7 @@ class TestDeactivateMissing:
 
     def test_reactivates_on_rescrape(self, clean_db):
         upsert_listings(clean_db, [_listing(id="flip", url="https://example.com/flip")])
-        deactivate_missing(clean_db, "imovirtual", [])
+        deactivate_missing(clean_db, "imovirtual", [], verify_fn=_all_gone)
 
         row = clean_db.query(Listing).filter(Listing.id == "flip").first()
         assert row.active is False
@@ -218,13 +221,13 @@ class TestDeactivateMissing:
 
     def test_does_not_deactivate_other_sources(self, clean_db):
         upsert_listings(clean_db, [_listing(id="other", url="https://example.com/other", source="idealista")])
-        deactivate_missing(clean_db, "imovirtual", [])
+        deactivate_missing(clean_db, "imovirtual", [], verify_fn=_all_gone)
 
         row = clean_db.query(Listing).filter(Listing.id == "other").first()
         assert row.active is True
 
     def test_no_listings_no_crash(self, clean_db):
-        deactivate_missing(clean_db, "imovirtual", [])
+        deactivate_missing(clean_db, "imovirtual", [], verify_fn=_all_gone)
 
     def test_all_still_active(self, clean_db):
         upsert_listings(
@@ -234,11 +237,20 @@ class TestDeactivateMissing:
                 _listing(id="a2", url="https://example.com/a2"),
             ],
         )
-        deactivate_missing(clean_db, "imovirtual", ["a1", "a2"])
+        deactivate_missing(clean_db, "imovirtual", ["a1", "a2"], verify_fn=_all_gone)
 
         for lid in ["a1", "a2"]:
             row = clean_db.query(Listing).filter(Listing.id == lid).first()
             assert row.active is True
+
+    def test_skips_deactivation_if_still_live(self, clean_db):
+        upsert_listings(clean_db, [_listing(id="live", url="https://example.com/live")])
+        # verify_fn says "live" is still up — should NOT be deactivated
+        deactivate_missing(clean_db, "imovirtual", [], verify_fn=lambda pairs: {"live"})
+
+        row = clean_db.query(Listing).filter(Listing.id == "live").first()
+        assert row.active is True
+        assert row.inactive_since is None
 
 
 class TestSanitizeUrl:
@@ -364,7 +376,7 @@ class TestIsDeleted:
         upsert_listings(clean_db, [_listing(id="del", url="https://example.com/del")])
         self._mark_deleted(clean_db, "del")
         # "del" is not in active_ids, but is_deleted so it should not be touched
-        deactivate_missing(clean_db, "imovirtual", [])
+        deactivate_missing(clean_db, "imovirtual", [], verify_fn=_all_gone)
         clean_db.expire_all()
         row = clean_db.query(Listing).filter_by(id="del").first()
         assert row.active is True  # untouched
