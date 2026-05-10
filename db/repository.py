@@ -42,7 +42,8 @@ def _sanitize_url(url: Optional[str]) -> Optional[str]:
     return url.replace("/hpr/", "/")
 
 
-def upsert_listings(db: Session, listings: list[dict]):
+def upsert_listings(db: Session, listings: list[dict]) -> int:
+    """Upsert listings and return the number of price changes recorded."""
     if not listings:
         return
 
@@ -98,6 +99,7 @@ def upsert_listings(db: Session, listings: list[dict]):
         db.execute(raw_stmt)
 
     db.commit()
+    return len(price_changes)
 
 
 def _get_existing(db: Session, ids: list[str]) -> dict:

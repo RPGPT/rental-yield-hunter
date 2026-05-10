@@ -51,6 +51,14 @@ jobs:
           SOURCE=$(echo "${{ inputs.source }}" | tr '[:upper:]' '[:lower:]')
           python main.py --source "$SOURCE" --city "${{ inputs.city }}"
 
+      - name: Upload stats
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scrape-stats-${{ inputs.city }}
+          path: stats-*.json
+          if-no-files-found: warn
+
   # ── When no city is chosen, fan out: one job per city, all in parallel ──────
   scrape-all:
     if: ${{ inputs.city == '' || github.event_name == 'schedule' }}
@@ -85,3 +93,67 @@ jobs:
         run: |
           SOURCE=$(echo "${{ inputs.source || 'Imovirtual' }}" | tr '[:upper:]' '[:lower:]')
           python main.py --source "$SOURCE" --city "${{ matrix.city }}"
+
+      - name: Upload stats
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scrape-stats-${{ matrix.city }}
+          path: stats-*.json
+          if-no-files-found: warn
+
+  # ── Wait for all city jobs then write a Markdown summary to the Actions UI ──
+  summarise:
+    needs: [scrape-single, scrape-all]
+    if: always()
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all stats artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: scrape-stats-*
+          merge-multiple: true   # all stats-*.json land flat in ./stats/
+          path: stats
+        continue-on-error: true  # graceful if every city job was skipped/failed
+
+      - name: Write job summary
+        run: |
+          python - <<'EOF'
+          import json, os, pathlib, sys
+
+          stats_dir = pathlib.Path("stats")
+          rows = sorted(
+              (json.loads(f.read_text()) for f in stats_dir.glob("stats-*.json")),
+              key=lambda r: r["city"],
+          ) if stats_dir.exists() else []
+
+          out = os.environ.get("GITHUB_STEP_SUMMARY", "/dev/stdout")
+          with open(out, "w") as fh:
+              if not rows:
+                  fh.write("## 🏠 Scrape Summary\n\nNo stats available — all city jobs may have failed.\n")
+                  sys.exit(0)
+
+              total_fetched = sum(r["fetched"] for r in rows)
+              total_rented  = sum(r["rented"]  for r in rows)
+              total_changes = sum(r["price_changes"] for r in rows)
+
+              fh.write("## 🏠 Scrape Summary\n\n")
+              fh.write("| City | Fetched | Rented | Price changes |\n")
+              fh.write("|------|--------:|-------:|--------------:|\n")
+              for r in rows:
+                  fh.write(
+                      f"| {r['city']} "
+                      f"| {r['fetched']} "
+                      f"| {r['rented']} "
+                      f"| {r['price_changes']} |\n"
+                  )
+              fh.write("|------|--------:|-------:|--------------:|\n")
+              fh.write(
+                  f"| **Total** "
+                  f"| **{total_fetched}** "
+                  f"| **{total_rented}** "
+                  f"| **{total_changes}** |\n"
+              )
+          EOF
+

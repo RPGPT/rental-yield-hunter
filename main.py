@@ -1,5 +1,7 @@
 import argparse
+import json
 import logging
+import pathlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from config import SUPPORTED_CITIES
@@ -18,7 +20,7 @@ SCRAPERS = {
 }
 
 
-def scrape_city(source: str, city: str) -> None:
+def scrape_city(source: str, city: str) -> dict:
     scraper_cls = SCRAPERS.get(source)
     if not scraper_cls:
         raise ValueError(f"Unknown source: {source!r} (available: {', '.join(SCRAPERS)})")
@@ -29,14 +31,32 @@ def scrape_city(source: str, city: str) -> None:
 
     db = Session()
     try:
-        upsert_listings(db, listings)
-        # Pass city so deactivation is scoped only to this city's rows —
-        # required for correctness whether running sequentially or in parallel.
+        n_price_changes = upsert_listings(db, listings)
         active_ids = [listing["id"] for listing in listings]
         deactivate_missing(db, source, active_ids, city=city)
-        logger.info("Done — %d listings upserted from %s / %s", len(listings), source, city)
     finally:
         db.close()
+
+    stats = {
+        "city": city,
+        "fetched": len(listings),
+        "rented": sum(1 for listing in listings if listing.get("is_rented")),
+        "price_changes": n_price_changes,
+    }
+    logger.info(
+        "Done — %d fetched, %d rented, %d price changes (%s / %s)",
+        stats["fetched"],
+        stats["rented"],
+        stats["price_changes"],
+        source,
+        city,
+    )
+
+    # Write stats file so the CI summary job can aggregate across cities.
+    slug = city.replace(" ", "-")
+    pathlib.Path(f"stats-{slug}.json").write_text(json.dumps(stats))
+
+    return stats
 
 
 def scrape_all(source: str, cities: list[str], parallel: bool = False) -> None:
