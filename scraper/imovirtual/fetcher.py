@@ -78,7 +78,8 @@ def _fetch_page(session, build_id: str, api_path: str, search_url: str, page: in
     return resp.json().get("pageProps", {}).get("data", {}).get("searchAds")
 
 
-def _fetch_detail(session, url: str, build_id: str) -> Optional[str]:
+def _fetch_detail(session, url: str, build_id: str) -> Optional[dict]:
+    """Return {"description": ..., "full_description": ...} for the listing, or None on failure."""
     path = url.replace(BASE_URL, "").lstrip("/")
     api_url = f"{BASE_URL}_next/data/{build_id}/{path}.json"
     resp = session.get(
@@ -91,7 +92,11 @@ def _fetch_detail(session, url: str, build_id: str) -> Optional[str]:
         },
     )
     if resp.status_code == 200:
-        return resp.json().get("pageProps", {}).get("ad", {}).get("description")
+        ad = resp.json().get("pageProps", {}).get("ad", {})
+        return {
+            "description": ad.get("description"),
+            "full_description": ad.get("fullDescription"),
+        }
     return None
 
 
@@ -172,13 +177,18 @@ def fetch_details(listings: list[dict], city: str) -> list[dict]:
         if not url:
             continue
 
-        description = _fetch_detail(session, url, build_id)
-        if description:
+        detail = _fetch_detail(session, url, build_id)
+        if detail:
+            description = detail["description"] or ""
+            full_description = detail["full_description"] or ""
+            # Store the primary description; check lifetime_rent against both
+            # fields because sellers often put "vitalícia" in fullDescription only.
+            combined = f"{description} {full_description}".strip()
             listing["description"] = description
-            listing["is_rented"] = is_rented(f"{listing.get('title', '')} {description}")
-            listing["lifetime_rent"] = _is_lifetime_rent(description)
+            listing["is_rented"] = is_rented(f"{listing.get('title', '')} {combined}")
+            listing["lifetime_rent"] = _is_lifetime_rent(combined)
             if isinstance(listing.get("_raw_json"), dict):
-                listing["_raw_json"]["fullDescription"] = description
+                listing["_raw_json"]["fullDescription"] = full_description
             enriched += 1
         else:
             listing["is_rented"] = is_rented(listing.get("title", ""))

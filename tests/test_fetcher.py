@@ -229,3 +229,29 @@ class TestFetchDetails:
     def test_raises_on_unsupported_city(self):
         with pytest.raises(ValueError, match="Unsupported city"):
             fetch_details([{"url": "https://x.com", "is_rented": True}], "Lisboa")
+
+    @patch("scraper.imovirtual.fetcher.curl_requests")
+    @patch("scraper.imovirtual.fetcher.time")
+    def test_lifetime_rent_detected_in_full_description_only(self, mock_time, mock_curl):
+        """Regression: vitalícia appears in fullDescription but not in description."""
+        session = MagicMock()
+        mock_curl.Session.return_value = session
+        detail = MagicMock(status_code=200)
+        detail.json.return_value = {
+            "pageProps": {
+                "ad": {
+                    "description": "Apartamento arrendado em zona premium.",
+                    "fullDescription": (
+                        "Atualmente arrendado com contrato de inquilina vitalícia (renda atual de 162,90\u20ac/m\xeas)."
+                    ),
+                }
+            }
+        }
+        session.get.side_effect = [MagicMock(status_code=200, text=BUILD_ID_HTML), detail]
+
+        listing = [{"url": "https://www.imovirtual.com/pt/anuncio/v", "title": "", "is_rented": True}]
+        result = fetch_details(listing, CITY)
+
+        assert result[0]["lifetime_rent"] is True
+        # description field stores only the short description, not fullDescription
+        assert result[0]["description"] == "Apartamento arrendado em zona premium."
