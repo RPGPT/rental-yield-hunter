@@ -56,10 +56,15 @@ def upsert_listings(db: Session, listings: list[dict]) -> int:
     existing = _get_existing(db, [listing["id"] for listing in listings])
 
     price_changes = []
+    reactivated = []
     for listing in listings:
         row = existing.get(listing["id"])
-        if row and not row["is_deleted"] and listing.get("price") is not None and row["price"] != listing["price"]:
-            price_changes.append({"listing_id": listing["id"], "price": listing["price"]})
+        if row and not row["is_deleted"]:
+            if listing.get("price") is not None and row["price"] != listing["price"]:
+                price_changes.append({"listing_id": listing["id"], "price": listing["price"]})
+            if not row["active"]:
+                reactivated.append(listing["id"])
+                logger.info("Reactivating listing %s — found again after being inactive", listing["id"])
 
     clean = [{k: v for k, v in listing.items() if k in LISTING_COLUMNS} for listing in listings]
 
@@ -75,6 +80,8 @@ def upsert_listings(db: Session, listings: list[dict]) -> int:
     if price_changes:
         db.execute(insert(ListingPriceHistory).values(price_changes))
         logger.info("Recorded %d price changes", len(price_changes))
+    if reactivated:
+        logger.info("Reactivated %d listings: %s", len(reactivated), reactivated)
 
     raw_rows = [
         {
@@ -103,14 +110,14 @@ def upsert_listings(db: Session, listings: list[dict]) -> int:
 
 
 def _get_existing(db: Session, ids: list[str]) -> dict:
-    """Return {id: {price, is_deleted}} for all ids that already exist."""
+    """Return {id: {price, is_deleted, active}} for all ids that already exist."""
     if not ids:
         return {}
     rows = db.execute(
-        text("SELECT id, price, is_deleted FROM listings WHERE id = ANY(:ids)"),
+        text("SELECT id, price, is_deleted, active FROM listings WHERE id = ANY(:ids)"),
         {"ids": ids},
     ).fetchall()
-    return {r[0]: {"price": r[1], "is_deleted": r[2]} for r in rows}
+    return {r[0]: {"price": r[1], "is_deleted": r[2], "active": r[3]} for r in rows}
 
 
 def deactivate_missing(db: Session, source: str, active_ids: list[str], city: Optional[str] = None):
