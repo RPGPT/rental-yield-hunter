@@ -73,7 +73,7 @@ jobs:
 
   # ── Single city: rent (after buy) ────────────────────────────────────────────
   scrape-single-rent:
-    if: ${{ inputs.city != '' && (inputs.scraping_type == '' || inputs.scraping_type == 'Rent') }}
+    if: ${{ always() && !failure() && inputs.city != '' && (inputs.scraping_type == '' || inputs.scraping_type == 'Rent') }}
     needs: scrape-single-buy
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -151,7 +151,7 @@ jobs:
 
   # ── All cities: rent (after buy) ──────────────────────────────────────────────
   scrape-all-rent:
-    if: ${{ (inputs.city == '' || github.event_name == 'schedule') && (inputs.scraping_type == '' || inputs.scraping_type == 'Rent') }}
+    if: ${{ always() && !failure() && (inputs.city == '' || github.event_name == 'schedule') && (inputs.scraping_type == '' || inputs.scraping_type == 'Rent') }}
     needs: scrape-all-buy
     runs-on: ubuntu-latest
     timeout-minutes: 60
