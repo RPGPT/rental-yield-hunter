@@ -193,7 +193,6 @@ jobs:
           path: stats-*.json
           if-no-files-found: warn
 
-  # ── Wait for all city jobs then write a Markdown summary to the Actions UI ──
   summarise:
     needs: [scrape-single-buy, scrape-single-rent, scrape-all-buy, scrape-all-rent]
     if: always()
@@ -233,7 +232,7 @@ jobs:
                   total_changes = sum(r["price_changes"] for r in rows)
                   fh.write("### 🛒 Buy\n\n")
                   fh.write("| City | Fetched | Rented | Price changes |\n")
-                  fh.write("|------|--------:|-------:|--------------:|\n")
+                  fh.write("|------|---------|--------|---------------|\n")
                   for r in rows:
                       fh.write(
                           f"| {r['city']} "
@@ -241,7 +240,7 @@ jobs:
                           f"| {r.get('rented', 0)} "
                           f"| {r['price_changes']} |\n"
                       )
-                  fh.write("|------|--------:|-------:|--------------:|\n")
+                  fh.write("|------|---------|--------|---------------|\n")
                   fh.write(
                       f"| **Total** "
                       f"| **{total_fetched}** "
@@ -263,7 +262,7 @@ jobs:
                           f"| {r['fetched']} "
                           f"| {r['price_changes']} |\n"
                       )
-                  fh.write("|------|--------:|--------------:|\n")
+                  fh.write("|------|---------|---------------|\n")
                   fh.write(
                       f"| **Total** "
                       f"| **{total_fetched}** "
