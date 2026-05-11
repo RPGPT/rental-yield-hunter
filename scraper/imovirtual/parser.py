@@ -24,6 +24,15 @@ def rooms_to_typology(value: Optional[str]) -> Optional[str]:
         return None
 
 
+_TYPOLOGY_RE = re.compile(r"\bT\s*(\d+)\b", re.IGNORECASE)
+
+
+def typology_from_title(title: str) -> Optional[str]:
+    """Extract typology from listing title as a fallback (e.g. 'T2', 'T 4')."""
+    match = _TYPOLOGY_RE.search(title)
+    return f"T{match.group(1)}" if match else None
+
+
 def build_url(href: str) -> Optional[str]:
     if not href:
         return None
@@ -100,7 +109,7 @@ def parse_listing(item: dict, target_city: Optional[str] = None) -> Optional[dic
             "neighborhood": neighborhood,
             "city": city,
             "property_type": ESTATE_MAP.get(item.get("estate")),
-            "typology": rooms_to_typology(item.get("roomsNumber")),
+            "typology": rooms_to_typology(item.get("roomsNumber")) or typology_from_title(title),
             "floor": str(item["floorNumber"]) if item.get("floorNumber") is not None else None,
             "has_garage": "PARKING_SPOT" in tags or "garage" in " ".join(features).lower(),
             "is_rented": is_rented(f"{title} {description}"),

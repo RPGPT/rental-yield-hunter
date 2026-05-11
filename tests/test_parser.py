@@ -1,4 +1,12 @@
-from scraper.imovirtual.parser import build_location, build_url, extract_id, parse, parse_listing, rooms_to_typology
+from scraper.imovirtual.parser import (
+    build_location,
+    build_url,
+    extract_id,
+    parse,
+    parse_listing,
+    rooms_to_typology,
+    typology_from_title,
+)
 from tests.conftest import make_item, make_response
 
 
@@ -106,7 +114,9 @@ class TestParseListing:
             assert parse_listing(make_item(roomsNumber=rooms))["typology"] == expected
 
     def test_typology_unknown_returns_none(self):
-        assert parse_listing(make_item(roomsNumber="MORE"))["typology"] is None
+        # "MORE" has no numeric equivalent; title has no T-pattern → None
+        result = parse_listing(make_item(roomsNumber="MORE", title="Prédio em Cedofeita, Porto"))
+        assert result["typology"] is None
 
     def test_rooms_to_typology_numeric_string(self):
         assert rooms_to_typology("8") == "T7"
@@ -116,6 +126,27 @@ class TestParseListing:
     def test_rooms_to_typology_none(self):
         assert rooms_to_typology(None) is None
         assert rooms_to_typology("MORE") is None
+
+    def test_typology_from_title(self):
+        assert typology_from_title("Apartamento T2 com jardim") == "T2"
+        assert typology_from_title("PRÉDIO PARA REABILITAÇÃO T4") == "T4"
+        assert typology_from_title("Oportunidade T 4 no centro") == "T4"
+        assert typology_from_title("Vendo T1 e T2 com jardim") == "T1"
+
+    def test_typology_from_title_no_match(self):
+        assert typology_from_title("Prédio Venda em Campanhã") is None
+
+    def test_typology_fallback_used_when_rooms_number_missing(self):
+        result = parse_listing(make_item(roomsNumber=None, title="Apartamento T3 Porto"))
+        assert result["typology"] == "T3"
+
+    def test_typology_fallback_used_with_space(self):
+        result = parse_listing(make_item(roomsNumber=None, title="Moradia T 2 Matosinhos"))
+        assert result["typology"] == "T2"
+
+    def test_typology_null_when_no_rooms_and_no_title_match(self):
+        result = parse_listing(make_item(roomsNumber=None, title="Prédio histórico no Porto"))
+        assert result["typology"] is None
 
     def test_no_price_returns_none(self):
         assert parse_listing(make_item(totalPrice=None)) is None
@@ -171,7 +202,13 @@ class TestParseListing:
 
     def test_missing_optional_fields(self):
         result = parse_listing(
-            make_item(areaInSquareMeters=None, pricePerSquareMeter=None, floorNumber=None, roomsNumber=None)
+            make_item(
+                areaInSquareMeters=None,
+                pricePerSquareMeter=None,
+                floorNumber=None,
+                roomsNumber=None,
+                title="Prédio histórico no Porto",  # no T-pattern → typology stays None
+            )
         )
         assert result["area"] is None
         assert result["price_per_m2"] is None

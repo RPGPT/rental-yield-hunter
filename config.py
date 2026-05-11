@@ -12,11 +12,9 @@ SUPPORTED_CITIES = [
 RENTED_KEYWORDS = [
     "arrendado",
     "inquilino",
-    "rentabilidade",
     "arrendamento",
     "renda",
     "rented",
-    "yield",
     "tenant",
     "alugado",
     "contrato de aluguer",

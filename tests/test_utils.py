@@ -9,11 +9,9 @@ class TestIsRented:
         [
             "arrendado",
             "inquilino",
-            "rentabilidade",
             "arrendamento",
             "renda",
             "rented",
-            "yield",
             "tenant",
             "alugado",
             "contrato de aluguer",
@@ -29,8 +27,11 @@ class TestIsRented:
         assert is_rented("Apartamento ARRENDADO") is True
         assert is_rented("Com INQUILINO estável") is True
 
-    def test_keyword_in_description(self):
-        assert is_rented("Boa rentabilidade garantida") is True
+    def test_rentabilidade_no_longer_triggers(self):
+        assert is_rented("Boa rentabilidade garantida") is False
+
+    def test_yield_no_longer_triggers(self):
+        assert is_rented("High yield investment") is False
 
     def test_empty_string(self):
         assert is_rented("") is False
