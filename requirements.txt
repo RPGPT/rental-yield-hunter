@@ -7,3 +7,4 @@ pytest
 testcontainers[postgres]
 ruff
 pre-commit
+word2number

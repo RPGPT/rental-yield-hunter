@@ -69,13 +69,13 @@ class TestFullPipeline:
         assert apt_a.title == "Apt A"
         assert apt_a.price == 195000
         assert apt_a.property_type == "apartment"
-        assert apt_a.typology == "T2"
+        assert apt_a.typology == "T1"  # roomsNumber=TWO → 2 divisions = T1
         assert apt_a.source == "imovirtual"
 
         apt_b = clean_db.query(Listing).filter(Listing.id == "1002").first()
         assert apt_b.price == 250000
         assert apt_b.property_type == "house"
-        assert apt_b.typology == "T3"
+        assert apt_b.typology == "T2"  # roomsNumber=THREE → 3 divisions = T2
         assert apt_b.has_garage is True
         assert apt_b.is_rented is False
 

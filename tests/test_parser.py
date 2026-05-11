@@ -1,4 +1,4 @@
-from scraper.imovirtual.parser import build_location, build_url, extract_id, parse, parse_listing
+from scraper.imovirtual.parser import build_location, build_url, extract_id, parse, parse_listing, rooms_to_typology
 from tests.conftest import make_item, make_response
 
 
@@ -89,7 +89,7 @@ class TestParseListing:
         assert result["area"] == 85
         assert result["price_per_m2"] == 2353.0
         assert result["property_type"] == "apartment"
-        assert result["typology"] == "T2"
+        assert result["typology"] == "T1"
         assert result["floor"] == "3"
         assert result["has_garage"] is True
         assert result["neighborhood"] == "Paranhos"
@@ -102,8 +102,20 @@ class TestParseListing:
             assert parse_listing(make_item(estate=estate))["property_type"] == expected
 
     def test_typology_mapping(self):
-        for rooms, expected in [("ONE", "T1"), ("THREE", "T3"), ("FIVE_OR_MORE", "T5+")]:
+        for rooms, expected in [("ONE", "T0"), ("TWO", "T1"), ("THREE", "T2"), ("FOUR", "T3"), ("FIVE", "T4")]:
             assert parse_listing(make_item(roomsNumber=rooms))["typology"] == expected
+
+    def test_typology_unknown_returns_none(self):
+        assert parse_listing(make_item(roomsNumber="MORE"))["typology"] is None
+
+    def test_rooms_to_typology_numeric_string(self):
+        assert rooms_to_typology("8") == "T7"
+        assert rooms_to_typology("1") == "T0"
+        assert rooms_to_typology("3") == "T2"
+
+    def test_rooms_to_typology_none(self):
+        assert rooms_to_typology(None) is None
+        assert rooms_to_typology("MORE") is None
 
     def test_no_price_returns_none(self):
         assert parse_listing(make_item(totalPrice=None)) is None

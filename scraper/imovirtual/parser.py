@@ -3,11 +3,25 @@ import re
 from datetime import datetime, timezone
 from typing import Optional
 
+from word2number import w2n
+
 from config import MAX_PRICE, MIN_PRICE
-from scraper.imovirtual.constants import BASE_URL, ESTATE_MAP, ROOMS_MAP, SOURCE
+from scraper.imovirtual.constants import BASE_URL, ESTATE_MAP, SOURCE
 from scraper.utils import is_rented
 
 logger = logging.getLogger(__name__)
+
+
+def rooms_to_typology(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    if value.isdigit():
+        return f"T{int(value) - 1}"
+    try:
+        n = w2n.word_to_num(value.lower())
+        return f"T{n - 1}"
+    except ValueError:
+        return None
 
 
 def build_url(href: str) -> Optional[str]:
@@ -86,7 +100,7 @@ def parse_listing(item: dict, target_city: Optional[str] = None) -> Optional[dic
             "neighborhood": neighborhood,
             "city": city,
             "property_type": ESTATE_MAP.get(item.get("estate")),
-            "typology": ROOMS_MAP.get(item.get("roomsNumber")),
+            "typology": rooms_to_typology(item.get("roomsNumber")),
             "floor": str(item["floorNumber"]) if item.get("floorNumber") is not None else None,
             "has_garage": "PARKING_SPOT" in tags or "garage" in " ".join(features).lower(),
             "is_rented": is_rented(f"{title} {description}"),

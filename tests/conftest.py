@@ -40,7 +40,7 @@ def clean_db(db):
 def make_item(**overrides):
     item = {
         "id": 99999999,
-        "title": "Apartamento T2 em Paranhos",
+        "title": "Apartamento T1 em Paranhos",
         "estate": "FLAT",
         "roomsNumber": "TWO",
         "floorNumber": 3,
