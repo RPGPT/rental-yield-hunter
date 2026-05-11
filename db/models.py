@@ -79,6 +79,7 @@ class RentalListing(Base):
     price = Column(Integer)
     area = Column(Integer)
     price_per_m2 = Column(Float)
+    rent_price_per_m2 = Column(Float)
 
     location = Column(Text)
     neighborhood = Column(Text)
@@ -90,8 +91,6 @@ class RentalListing(Base):
 
     has_garage = Column(Boolean)
 
-    is_rented = Column(Boolean, default=False)
-    lifetime_rent = Column(Boolean, default=False)
     is_deleted = Column(Boolean, default=False, server_default="false")
     active = Column(Boolean, default=True, server_default="true")
     inactive_since = Column(TIMESTAMP, nullable=True)

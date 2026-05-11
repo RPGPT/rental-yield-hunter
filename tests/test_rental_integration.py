@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 from db.models import RentalListing, RentalListingPriceHistory, RentalRawData
 from db.repository import deactivate_missing_rentals, upsert_rental_listings
 from scraper.imovirtual.constants import RENTAL_CITY_PATHS
-from scraper.imovirtual.fetcher import fetch, fetch_details
+from scraper.imovirtual.fetcher import fetch
 from scraper.imovirtual.parser import parse
 from tests.conftest import make_item
 
@@ -166,19 +166,13 @@ class TestRentalFullPipeline:
 
     @patch("scraper.imovirtual.fetcher.curl_requests")
     @patch("scraper.imovirtual.fetcher.time")
-    def test_lifetime_rent_enrichment(self, mock_time, mock_curl, clean_rental_db):
+    def test_rent_price_per_m2_stored(self, mock_time, mock_curl, clean_rental_db):
         session = MagicMock()
         mock_curl.Session.return_value = session
         api_resp = MagicMock(status_code=200)
         api_resp.json.return_value = _page(
             [
-                make_item(
-                    id=9401,
-                    href="[lang]/ad/vit-ID9401",
-                    title="Apartamento arrendado",
-                    shortDescription="Com inquilino",
-                    totalPrice={"value": 800},
-                )
+                make_item(id=9501, href="[lang]/ad/ppm2-ID9501", totalPrice={"value": 1200}, areaInSquareMeters=80),
             ]
         )
         session.get.side_effect = [MagicMock(status_code=200, text=BUILD_ID_HTML), api_resp]
@@ -189,16 +183,13 @@ class TestRentalFullPipeline:
             min_price=300,
             max_price=4000,
         )
-        assert listings[0]["is_rented"] is True
+        upsert_rental_listings(clean_rental_db, listings)
 
-        detail_session = MagicMock()
-        mock_curl.Session.return_value = detail_session
-        detail_resp = MagicMock(status_code=200)
-        detail_resp.json.return_value = {"pageProps": {"ad": {"description": "Renda vitalicia garantida"}}}
-        detail_session.get.side_effect = [MagicMock(status_code=200, text=BUILD_ID_HTML), detail_resp]
+        row = clean_rental_db.query(RentalListing).filter_by(id="9501").first()
+        assert row.rent_price_per_m2 == 15.0
 
-        upsert_rental_listings(clean_rental_db, fetch_details(listings, CITY, city_paths=RENTAL_CITY_PATHS))
-
-        row = clean_rental_db.query(RentalListing).filter_by(id="9401").first()
-        assert row.is_rented is True
-        assert row.lifetime_rent is True
+    @patch("scraper.imovirtual.fetcher.curl_requests")
+    @patch("scraper.imovirtual.fetcher.time")
+    def test_no_is_rented_on_rental_model(self, mock_time, mock_curl, clean_rental_db):
+        assert "is_rented" not in [c.name for c in RentalListing.__table__.columns]
+        assert "lifetime_rent" not in [c.name for c in RentalListing.__table__.columns]

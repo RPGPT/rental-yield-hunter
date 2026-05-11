@@ -41,6 +41,9 @@ class ImovirtualRentalScraper(ImovirtualBaseScraper):
     MIN_PRICE = config.MIN_RENTAL_PRICE
     MAX_PRICE = config.MAX_RENTAL_PRICE
 
+    def enrich(self, listings):
+        return listings
+
 
 # Backward-compatible alias
 ImovirtualScraper = ImovirtualBuyScraper

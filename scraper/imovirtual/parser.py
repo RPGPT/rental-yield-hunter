@@ -113,6 +113,7 @@ def parse_listing(
             "price": price,
             "area": int(area) if area is not None else None,
             "price_per_m2": float(ppm2) if ppm2 is not None else None,
+            "rent_price_per_m2": round(price / int(area), 2) if area else (float(ppm2) if ppm2 is not None else None),
             "location": location,
             "neighborhood": neighborhood,
             "city": city,

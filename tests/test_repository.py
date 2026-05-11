@@ -332,10 +332,12 @@ class TestIsDeleted:
 
 
 _RENTAL_BASE = {
-    **_BASE,
+    **{k: v for k, v in _BASE.items() if k not in ("is_rented", "lifetime_rent")},
     "id": "rental-repo-1",
     "url": "https://example.com/rental-repo-1",
     "price": 1200,
+    "area": 80,
+    "rent_price_per_m2": 15.0,
 }
 
 
@@ -346,6 +348,12 @@ class TestRentalUpsertInsert:
         assert row is not None
         assert row.price == 1200
         assert row.typology == "T2"
+        assert row.rent_price_per_m2 == 15.0
+
+    def test_is_rented_and_lifetime_rent_not_stored(self, clean_rental_db):
+        upsert_rental_listings(clean_rental_db, [{**_RENTAL_BASE, "is_rented": True, "lifetime_rent": True}])
+        row = clean_rental_db.query(RentalListing).filter_by(id="rental-repo-1").first()
+        assert not hasattr(row, "is_rented") or row.__class__.__table__.c.keys().count("is_rented") == 0
 
     def test_inserts_multiple(self, clean_rental_db):
         upsert_rental_listings(

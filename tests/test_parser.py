@@ -292,3 +292,41 @@ class TestCustomPriceRange:
         assert parse_listing(make_item(totalPrice={"value": MIN_PRICE})) is not None
         assert parse_listing(make_item(totalPrice={"value": MIN_PRICE - 1})) is None
         assert parse_listing(make_item(totalPrice={"value": MAX_PRICE + 1})) is None
+
+
+class TestRentPricePerM2:
+    def test_calculated_from_price_and_area(self):
+        result = parse_listing(
+            make_item(totalPrice={"value": 1200}, areaInSquareMeters=80), min_price=300, max_price=4000
+        )
+        assert result["rent_price_per_m2"] == 15.0
+
+    def test_falls_back_to_api_ppm2_when_no_area(self):
+        result = parse_listing(
+            make_item(
+                totalPrice={"value": 1200},
+                areaInSquareMeters=None,
+                pricePerSquareMeter={"value": 14},
+            ),
+            min_price=300,
+            max_price=4000,
+        )
+        assert result["rent_price_per_m2"] == 14.0
+
+    def test_none_when_no_area_and_no_api_ppm2(self):
+        result = parse_listing(
+            make_item(
+                totalPrice={"value": 1200},
+                areaInSquareMeters=None,
+                pricePerSquareMeter=None,
+            ),
+            min_price=300,
+            max_price=4000,
+        )
+        assert result["rent_price_per_m2"] is None
+
+    def test_precise_calculation(self):
+        result = parse_listing(
+            make_item(totalPrice={"value": 520}, areaInSquareMeters=30), min_price=300, max_price=4000
+        )
+        assert result["rent_price_per_m2"] == round(520 / 30, 2)

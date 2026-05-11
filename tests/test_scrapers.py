@@ -44,6 +44,11 @@ class TestImovirtualRentalScraper:
     def test_same_cities_as_buy(self):
         assert set(RENTAL_CITY_PATHS.keys()) == set(BUY_CITY_PATHS.keys())
 
+    def test_enrich_is_noop(self):
+        scraper = ImovirtualRentalScraper("Porto")
+        listings = [{"id": "1", "price": 1200}]
+        assert scraper.enrich(listings) is listings
+
 
 class TestImovirtualScraperAlias:
     def test_is_buy_scraper(self):
