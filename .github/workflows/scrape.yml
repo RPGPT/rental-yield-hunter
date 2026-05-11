@@ -16,7 +16,7 @@ on:
         options:
           - Imovirtual
       scraping_type:
-        description: "Listing type (leave empty to scrape both)"
+        description: "Scraping type (leave empty to scrape both)"
         required: false
         default: ""
         type: choice
