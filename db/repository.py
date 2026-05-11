@@ -5,35 +5,12 @@ from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from db.models import Listing, ListingPriceHistory, RawData
+from db.models import Listing, ListingPriceHistory, RawData, RentalListing, RentalListingPriceHistory, RentalRawData
 
 logger = logging.getLogger(__name__)
 
-LISTING_COLUMNS = [
-    c.name for c in Listing.__table__.columns if c.name not in ("first_seen", "created_at", "is_deleted")
-]
-
-UPSERT_SET = [
-    "url",
-    "title",
-    "description",
-    "price",
-    "area",
-    "price_per_m2",
-    "location",
-    "neighborhood",
-    "city",
-    "property_type",
-    "typology",
-    "floor",
-    "has_garage",
-    "is_rented",
-    "lifetime_rent",
-    "active",
-    "inactive_since",
-    "last_seen",
-    "updated_at",
-]
+_EXCLUDE_FROM_INSERT = {"first_seen", "created_at", "is_deleted"}
+_EXCLUDE_FROM_UPSERT = {"first_seen", "created_at", "is_deleted", "id", "source"}
 
 
 def _sanitize_url(url: Optional[str]) -> Optional[str]:
@@ -42,18 +19,37 @@ def _sanitize_url(url: Optional[str]) -> Optional[str]:
     return url.replace("/hpr/", "/")
 
 
-def upsert_listings(db: Session, listings: list[dict]) -> int:
-    """Upsert listings and return the number of price changes recorded."""
-    if not listings:
-        return
+def _get_existing(db: Session, ids: list[str], table: str) -> dict:
+    """Return {id: {price, is_deleted, active}} for all ids that already exist."""
+    if not ids:
+        return {}
+    rows = db.execute(
+        text(f"SELECT id, price, is_deleted, active FROM {table} WHERE id = ANY(:ids)"),
+        {"ids": ids},
+    ).fetchall()
+    return {r[0]: {"price": r[1], "is_deleted": r[2], "active": r[3]} for r in rows}
 
-    # Ensure /hpr/ is never stored regardless of what the parser produced
+
+def _upsert(
+    db: Session,
+    listings: list[dict],
+    listing_model,
+    price_history_model,
+    raw_data_model,
+) -> int:
+    """Generic upsert for any listing model. Returns the number of price changes recorded."""
+    if not listings:
+        return 0
+
     for listing in listings:
         if "url" in listing:
             listing["url"] = _sanitize_url(listing["url"])
 
-    # Single query: fetch existing price + deleted flag for all incoming IDs
-    existing = _get_existing(db, [listing["id"] for listing in listings])
+    table = listing_model.__tablename__
+    listing_columns = [c.name for c in listing_model.__table__.columns if c.name not in _EXCLUDE_FROM_INSERT]
+    upsert_set = [c.name for c in listing_model.__table__.columns if c.name not in _EXCLUDE_FROM_UPSERT]
+
+    existing = _get_existing(db, [listing["id"] for listing in listings], table)
 
     price_changes = []
     reactivated = []
@@ -66,36 +62,32 @@ def upsert_listings(db: Session, listings: list[dict]) -> int:
                 reactivated.append(listing["id"])
                 logger.info("Reactivating listing %s — found again after being inactive", listing["id"])
 
-    clean = [{k: v for k, v in listing.items() if k in LISTING_COLUMNS} for listing in listings]
+    clean = [{k: v for k, v in listing.items() if k in listing_columns} for listing in listings]
 
-    stmt = insert(Listing).values(clean)
+    stmt = insert(listing_model).values(clean)
     stmt = stmt.on_conflict_do_update(
         index_elements=["id"],
-        set_={col: getattr(stmt.excluded, col) for col in UPSERT_SET},
+        set_={col: getattr(stmt.excluded, col) for col in upsert_set},
         # Never touch a row that has been manually deleted
-        where=Listing.is_deleted.is_(False),
+        where=listing_model.is_deleted.is_(False),
     )
     db.execute(stmt)
 
     if price_changes:
-        db.execute(insert(ListingPriceHistory).values(price_changes))
+        db.execute(insert(price_history_model).values(price_changes))
         logger.info("Recorded %d price changes", len(price_changes))
     if reactivated:
         logger.info("Reactivated %d listings: %s", len(reactivated), reactivated)
 
     raw_rows = [
-        {
-            "listing_id": listing["id"],
-            "raw_json": listing.get("_raw_json"),
-        }
+        {"listing_id": listing["id"], "raw_json": listing.get("_raw_json")}
         for listing in listings
         if listing.get("_raw_json")
     ]
     if raw_rows:
-        # Filter out deleted listings — don't update raw data for them either
         raw_rows = [r for r in raw_rows if not existing.get(r["listing_id"], {}).get("is_deleted")]
     if raw_rows:
-        raw_stmt = insert(RawData).values(raw_rows)
+        raw_stmt = insert(raw_data_model).values(raw_rows)
         raw_stmt = raw_stmt.on_conflict_do_update(
             index_elements=["listing_id"],
             set_={
@@ -109,25 +101,17 @@ def upsert_listings(db: Session, listings: list[dict]) -> int:
     return len(price_changes)
 
 
-def _get_existing(db: Session, ids: list[str]) -> dict:
-    """Return {id: {price, is_deleted, active}} for all ids that already exist."""
-    if not ids:
-        return {}
-    rows = db.execute(
-        text("SELECT id, price, is_deleted, active FROM listings WHERE id = ANY(:ids)"),
-        {"ids": ids},
-    ).fetchall()
-    return {r[0]: {"price": r[1], "is_deleted": r[2], "active": r[3]} for r in rows}
-
-
-def deactivate_missing(db: Session, source: str, active_ids: list[str], city: Optional[str] = None):
+def _deactivate_missing(
+    db: Session,
+    source: str,
+    active_ids: list[str],
+    listing_model,
+    city: Optional[str] = None,
+) -> None:
     """Mark as inactive any listing from *source* (optionally scoped to *city*)
     that was not present in the current scrape run.
-
-    Passing *city* is strongly recommended when scraping cities in parallel —
-    without it the UPDATE touches rows belonging to all cities of that source,
-    causing race conditions and incorrect deactivations.
     """
+    table = listing_model.__tablename__
     params: dict = {"source": source, "ids": active_ids}
     city_clause = ""
     if city:
@@ -136,7 +120,7 @@ def deactivate_missing(db: Session, source: str, active_ids: list[str], city: Op
 
     result = db.execute(
         text(f"""
-            UPDATE listings
+            UPDATE {table}
             SET active = false, inactive_since = NOW()
             WHERE source = :source
               AND active = true
@@ -150,3 +134,34 @@ def deactivate_missing(db: Session, source: str, active_ids: list[str], city: Op
     if result.rowcount:
         logger.info("Deactivated %d listings no longer found in %s", result.rowcount, label)
     db.commit()
+
+
+# ── Buy listings ────────────────────────────────────────────────────────────
+
+
+def upsert_listings(db: Session, listings: list[dict]) -> int:
+    """Upsert buy listings and return the number of price changes recorded."""
+    return _upsert(db, listings, Listing, ListingPriceHistory, RawData)
+
+
+def deactivate_missing(db: Session, source: str, active_ids: list[str], city: Optional[str] = None) -> None:
+    """Mark as inactive any buy listing from *source* not present in the current scrape run.
+
+    Passing *city* is strongly recommended when scraping cities in parallel —
+    without it the UPDATE touches rows belonging to all cities of that source,
+    causing race conditions and incorrect deactivations.
+    """
+    _deactivate_missing(db, source, active_ids, Listing, city)
+
+
+# ── Rental listings ─────────────────────────────────────────────────────────
+
+
+def upsert_rental_listings(db: Session, listings: list[dict]) -> int:
+    """Upsert rental listings and return the number of price changes recorded."""
+    return _upsert(db, listings, RentalListing, RentalListingPriceHistory, RentalRawData)
+
+
+def deactivate_missing_rentals(db: Session, source: str, active_ids: list[str], city: Optional[str] = None) -> None:
+    """Mark as inactive any rental listing from *source* not present in the current scrape run."""
+    _deactivate_missing(db, source, active_ids, RentalListing, city)

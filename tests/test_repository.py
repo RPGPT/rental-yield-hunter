@@ -2,8 +2,14 @@ from datetime import datetime, timezone
 
 from sqlalchemy import text
 
-from db.models import Listing, ListingPriceHistory, RawData
-from db.repository import _sanitize_url, deactivate_missing, upsert_listings
+from db.models import Listing, ListingPriceHistory, RawData, RentalListing, RentalListingPriceHistory, RentalRawData
+from db.repository import (
+    _sanitize_url,
+    deactivate_missing,
+    deactivate_missing_rentals,
+    upsert_listings,
+    upsert_rental_listings,
+)
 
 _NOW = datetime.now(timezone.utc)
 
@@ -323,3 +329,137 @@ class TestIsDeleted:
         row = clean_db.query(Listing).filter_by(id="del").first()
         assert row.active is True
         assert row.inactive_since is None
+
+
+_RENTAL_BASE = {
+    **_BASE,
+    "id": "rental-repo-1",
+    "url": "https://example.com/rental-repo-1",
+    "price": 1200,
+}
+
+
+class TestRentalUpsertInsert:
+    def test_inserts_new_rental_listing(self, clean_rental_db):
+        upsert_rental_listings(clean_rental_db, [{**_RENTAL_BASE}])
+        row = clean_rental_db.query(RentalListing).filter_by(id="rental-repo-1").first()
+        assert row is not None
+        assert row.price == 1200
+        assert row.typology == "T2"
+
+    def test_inserts_multiple(self, clean_rental_db):
+        upsert_rental_listings(
+            clean_rental_db,
+            [
+                {**_RENTAL_BASE, "id": "r-a", "url": "https://example.com/r-a"},
+                {**_RENTAL_BASE, "id": "r-b", "url": "https://example.com/r-b"},
+            ],
+        )
+        assert clean_rental_db.query(RentalListing).count() == 2
+
+    def test_empty_list(self, clean_rental_db):
+        upsert_rental_listings(clean_rental_db, [])
+        assert clean_rental_db.query(RentalListing).count() == 0
+
+
+class TestRentalUpsertUpdate:
+    def test_updates_existing_fields(self, clean_rental_db):
+        upsert_rental_listings(clean_rental_db, [{**_RENTAL_BASE}])
+        upsert_rental_listings(clean_rental_db, [{**_RENTAL_BASE, "title": "Updated"}])
+        assert clean_rental_db.query(RentalListing).filter_by(id="rental-repo-1").first().title == "Updated"
+
+    def test_preserves_first_seen(self, clean_rental_db):
+        upsert_rental_listings(clean_rental_db, [{**_RENTAL_BASE}])
+        first_seen = clean_rental_db.query(RentalListing).filter_by(id="rental-repo-1").first().first_seen
+        upsert_rental_listings(clean_rental_db, [{**_RENTAL_BASE, "title": "Changed"}])
+        clean_rental_db.expire_all()
+        assert clean_rental_db.query(RentalListing).filter_by(id="rental-repo-1").first().first_seen == first_seen
+
+
+class TestRentalPriceHistory:
+    def test_records_price_change(self, clean_rental_db):
+        upsert_rental_listings(clean_rental_db, [{**_RENTAL_BASE, "price": 1200}])
+        upsert_rental_listings(clean_rental_db, [{**_RENTAL_BASE, "price": 1100}])
+        history = clean_rental_db.query(RentalListingPriceHistory).filter_by(listing_id="rental-repo-1").all()
+        assert len(history) == 1
+        assert history[0].price == 1100
+
+    def test_no_record_when_price_unchanged(self, clean_rental_db):
+        upsert_rental_listings(clean_rental_db, [{**_RENTAL_BASE, "price": 1200}])
+        upsert_rental_listings(clean_rental_db, [{**_RENTAL_BASE, "price": 1200}])
+        assert clean_rental_db.query(RentalListingPriceHistory).filter_by(listing_id="rental-repo-1").count() == 0
+
+
+class TestRentalRawData:
+    def test_stores_raw_json(self, clean_rental_db):
+        upsert_rental_listings(clean_rental_db, [{**_RENTAL_BASE, "_raw_json": {"id": 99}}])
+        row = clean_rental_db.query(RentalRawData).filter_by(listing_id="rental-repo-1").first()
+        assert row is not None
+        assert row.raw_json["id"] == 99
+
+    def test_updates_raw_json_on_rescrape(self, clean_rental_db):
+        upsert_rental_listings(clean_rental_db, [{**_RENTAL_BASE, "_raw_json": {"v": 1}}])
+        upsert_rental_listings(clean_rental_db, [{**_RENTAL_BASE, "_raw_json": {"v": 2}}])
+        assert clean_rental_db.query(RentalRawData).filter_by(listing_id="rental-repo-1").first().raw_json["v"] == 2
+
+
+class TestRentalIsDeleted:
+    def test_deleted_listing_price_not_updated(self, clean_rental_db):
+        upsert_rental_listings(clean_rental_db, [{**_RENTAL_BASE, "price": 1200}])
+        clean_rental_db.execute(text("UPDATE rental_listings SET is_deleted = true WHERE id = 'rental-repo-1'"))
+        clean_rental_db.commit()
+        upsert_rental_listings(clean_rental_db, [{**_RENTAL_BASE, "price": 800}])
+        clean_rental_db.expire_all()
+        assert clean_rental_db.query(RentalListing).filter_by(id="rental-repo-1").first().price == 1200
+
+    def test_deleted_listing_skips_price_history(self, clean_rental_db):
+        upsert_rental_listings(clean_rental_db, [{**_RENTAL_BASE, "price": 1200}])
+        clean_rental_db.execute(text("UPDATE rental_listings SET is_deleted = true WHERE id = 'rental-repo-1'"))
+        clean_rental_db.commit()
+        upsert_rental_listings(clean_rental_db, [{**_RENTAL_BASE, "price": 800}])
+        assert clean_rental_db.query(RentalListingPriceHistory).filter_by(listing_id="rental-repo-1").count() == 0
+
+
+class TestDeactivateMissingRentals:
+    def test_deactivates_missing_rental(self, clean_rental_db):
+        upsert_rental_listings(
+            clean_rental_db,
+            [
+                {**_RENTAL_BASE, "id": "r-stay", "url": "https://example.com/r-stay"},
+                {**_RENTAL_BASE, "id": "r-gone", "url": "https://example.com/r-gone"},
+            ],
+        )
+        deactivate_missing_rentals(clean_rental_db, "imovirtual", ["r-stay"])
+
+        assert clean_rental_db.query(RentalListing).filter_by(id="r-stay").first().active is True
+        gone = clean_rental_db.query(RentalListing).filter_by(id="r-gone").first()
+        assert gone.active is False
+        assert gone.inactive_since is not None
+
+    def test_does_not_touch_buy_listings(self, clean_db, clean_rental_db):
+        upsert_listings(clean_db, [{**_BASE, "id": "buy-only", "url": "https://example.com/buy-only"}])
+        deactivate_missing_rentals(clean_rental_db, "imovirtual", [])
+        assert clean_db.query(Listing).filter_by(id="buy-only").first().active is True
+
+    def test_skips_deleted_rentals(self, clean_rental_db):
+        upsert_rental_listings(clean_rental_db, [{**_RENTAL_BASE, "id": "r-del", "url": "https://example.com/r-del"}])
+        clean_rental_db.execute(text("UPDATE rental_listings SET is_deleted = true WHERE id = 'r-del'"))
+        clean_rental_db.commit()
+        deactivate_missing_rentals(clean_rental_db, "imovirtual", [])
+        clean_rental_db.expire_all()
+        row = clean_rental_db.query(RentalListing).filter_by(id="r-del").first()
+        assert row.active is True
+        assert row.inactive_since is None
+
+    def test_scoped_to_city(self, clean_rental_db):
+        upsert_rental_listings(
+            clean_rental_db,
+            [
+                {**_RENTAL_BASE, "id": "r-porto", "url": "https://example.com/r-porto", "city": "Porto"},
+                {**_RENTAL_BASE, "id": "r-maia", "url": "https://example.com/r-maia", "city": "Maia"},
+            ],
+        )
+        deactivate_missing_rentals(clean_rental_db, "imovirtual", [], city="Porto")
+        clean_rental_db.expire_all()
+        assert clean_rental_db.query(RentalListing).filter_by(id="r-porto").first().active is False
+        assert clean_rental_db.query(RentalListing).filter_by(id="r-maia").first().active is True

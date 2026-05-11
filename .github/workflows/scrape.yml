@@ -15,6 +15,15 @@ on:
         type: choice
         options:
           - Imovirtual
+      scraping_type:
+        description: "Listing type (leave empty to scrape both)"
+        required: false
+        default: ""
+        type: choice
+        options:
+          - ""
+          - "Buy"
+          - "Rent"
       city:
         description: "City to scrape (leave empty to scrape all cities in parallel)"
         required: false
@@ -28,9 +37,9 @@ on:
           - "Maia"
 
 jobs:
-  # ── When a specific city is chosen, run a single job for that city ──────────
-  scrape-single:
-    if: ${{ inputs.city != '' }}
+  # ── Single city: buy ─────────────────────────────────────────────────────────
+  scrape-single-buy:
+    if: ${{ inputs.city != '' && (inputs.scraping_type == '' || inputs.scraping_type == 'Buy') }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
@@ -49,27 +58,62 @@ jobs:
 
       - run: python -m alembic upgrade head
 
-      - name: Scrape ${{ inputs.city }}
+      - name: Scrape ${{ inputs.city }} (buy)
         run: |
           SOURCE=$(echo "${{ inputs.source }}" | tr '[:upper:]' '[:lower:]')
-          python main.py --source "$SOURCE" --city "${{ inputs.city }}"
+          python main.py --source "$SOURCE" --city "${{ inputs.city }}" --type buy
 
       - name: Upload stats
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: scrape-stats-${{ inputs.city }}
+          name: scrape-stats-buy-${{ inputs.city }}
           path: stats-*.json
           if-no-files-found: warn
 
-  # ── When no city is chosen, fan out: one job per city, all in parallel ──────
-  scrape-all:
-    if: ${{ inputs.city == '' || github.event_name == 'schedule' }}
+  # ── Single city: rent (after buy) ────────────────────────────────────────────
+  scrape-single-rent:
+    if: ${{ inputs.city != '' && (inputs.scraping_type == '' || inputs.scraping_type == 'Rent') }}
+    needs: scrape-single-buy
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - run: python -m alembic upgrade head
+
+      - name: Scrape ${{ inputs.city }} (rent)
+        run: |
+          SOURCE=$(echo "${{ inputs.source }}" | tr '[:upper:]' '[:lower:]')
+          python main.py --source "$SOURCE" --city "${{ inputs.city }}" --type rent
+
+      - name: Upload stats
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scrape-stats-rent-${{ inputs.city }}
+          path: stats-*.json
+          if-no-files-found: warn
+
+  # ── All cities: buy ───────────────────────────────────────────────────────────
+  scrape-all-buy:
+    if: ${{ (inputs.city == '' || github.event_name == 'schedule') && (inputs.scraping_type == '' || inputs.scraping_type == 'Buy') }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
     strategy:
-      fail-fast: false          # let other cities finish even if one fails
+      fail-fast: false
       matrix:
         city:
           - Porto
@@ -92,22 +136,66 @@ jobs:
 
       - run: python -m alembic upgrade head
 
-      - name: Scrape ${{ matrix.city }}
+      - name: Scrape ${{ matrix.city }} (buy)
         run: |
           SOURCE=$(echo "${{ inputs.source || 'Imovirtual' }}" | tr '[:upper:]' '[:lower:]')
-          python main.py --source "$SOURCE" --city "${{ matrix.city }}"
+          python main.py --source "$SOURCE" --city "${{ matrix.city }}" --type buy
 
       - name: Upload stats
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: scrape-stats-${{ matrix.city }}
+          name: scrape-stats-buy-${{ matrix.city }}
+          path: stats-*.json
+          if-no-files-found: warn
+
+  # ── All cities: rent (after buy) ──────────────────────────────────────────────
+  scrape-all-rent:
+    if: ${{ (inputs.city == '' || github.event_name == 'schedule') && (inputs.scraping_type == '' || inputs.scraping_type == 'Rent') }}
+    needs: scrape-all-buy
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    strategy:
+      fail-fast: false
+      matrix:
+        city:
+          - Porto
+          - Matosinhos
+          - Vila Nova de Gaia
+          - Maia
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - run: python -m alembic upgrade head
+
+      - name: Scrape ${{ matrix.city }} (rent)
+        run: |
+          SOURCE=$(echo "${{ inputs.source || 'Imovirtual' }}" | tr '[:upper:]' '[:lower:]')
+          python main.py --source "$SOURCE" --city "${{ matrix.city }}" --type rent
+
+      - name: Upload stats
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scrape-stats-rent-${{ matrix.city }}
           path: stats-*.json
           if-no-files-found: warn
 
   # ── Wait for all city jobs then write a Markdown summary to the Actions UI ──
   summarise:
-    needs: [scrape-single, scrape-all]
+    needs: [scrape-single-buy, scrape-single-rent, scrape-all-buy, scrape-all-rent]
     if: always()
     runs-on: ubuntu-latest
 
@@ -116,9 +204,9 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: scrape-stats-*
-          merge-multiple: true   # all stats-*.json land flat in ./stats/
+          merge-multiple: true
           path: stats
-        continue-on-error: true  # graceful if every city job was skipped/failed
+        continue-on-error: true
 
       - name: Write job summary
         run: |
@@ -126,37 +214,42 @@ jobs:
           import json, os, pathlib, sys
 
           stats_dir = pathlib.Path("stats")
-          rows = sorted(
+          all_rows = sorted(
               (json.loads(f.read_text()) for f in stats_dir.glob("stats-*.json")),
               key=lambda r: r["city"],
           ) if stats_dir.exists() else []
 
           out = os.environ.get("GITHUB_STEP_SUMMARY", "/dev/stdout")
           with open(out, "w") as fh:
-              if not rows:
+              if not all_rows:
                   fh.write("## 🏠 Scrape Summary\n\nNo stats available — all city jobs may have failed.\n")
                   sys.exit(0)
 
-              total_fetched = sum(r["fetched"] for r in rows)
-              total_rented  = sum(r["rented"]  for r in rows)
-              total_changes = sum(r["price_changes"] for r in rows)
+              def write_table(fh, title, rows):
+                  if not rows:
+                      return
+                  total_fetched = sum(r["fetched"] for r in rows)
+                  total_rented  = sum(r["rented"]  for r in rows)
+                  total_changes = sum(r["price_changes"] for r in rows)
+                  fh.write(f"### {title}\n\n")
+                  fh.write("| City | Fetched | Rented | Price changes |\n")
+                  fh.write("|------|--------:|-------:|--------------:|\n")
+                  for r in rows:
+                      fh.write(
+                          f"| {r['city']} "
+                          f"| {r['fetched']} "
+                          f"| {r['rented']} "
+                          f"| {r['price_changes']} |\n"
+                      )
+                  fh.write("|------|--------:|-------:|--------------:|\n")
+                  fh.write(
+                      f"| **Total** "
+                      f"| **{total_fetched}** "
+                      f"| **{total_rented}** "
+                      f"| **{total_changes}** |\n\n"
+                  )
 
               fh.write("## 🏠 Scrape Summary\n\n")
-              fh.write("| City | Fetched | Rented | Price changes |\n")
-              fh.write("|------|--------:|-------:|--------------:|\n")
-              for r in rows:
-                  fh.write(
-                      f"| {r['city']} "
-                      f"| {r['fetched']} "
-                      f"| {r['rented']} "
-                      f"| {r['price_changes']} |\n"
-                  )
-              fh.write("|------|--------:|-------:|--------------:|\n")
-              fh.write(
-                  f"| **Total** "
-                  f"| **{total_fetched}** "
-                  f"| **{total_rented}** "
-                  f"| **{total_changes}** |\n"
-              )
+              write_table(fh, "🛒 Buy", [r for r in all_rows if r.get("type") == "buy"])
+              write_table(fh, "🔑 Rent", [r for r in all_rows if r.get("type") == "rent"])
           EOF
-

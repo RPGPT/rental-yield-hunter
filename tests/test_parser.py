@@ -267,3 +267,28 @@ class TestParse:
         listings = parse([make_response(porto_item, maia_item)], target_city=None)
         assert len(listings) == 2
         assert {listing["city"] for listing in listings} == {"Porto", "Maia"}
+
+
+class TestCustomPriceRange:
+    def test_parse_listing_respects_custom_min(self):
+        assert parse_listing(make_item(totalPrice={"value": 299}), min_price=300, max_price=4000) is None
+        assert parse_listing(make_item(totalPrice={"value": 300}), min_price=300, max_price=4000) is not None
+
+    def test_parse_listing_respects_custom_max(self):
+        assert parse_listing(make_item(totalPrice={"value": 4001}), min_price=300, max_price=4000) is None
+        assert parse_listing(make_item(totalPrice={"value": 4000}), min_price=300, max_price=4000) is not None
+
+    def test_parse_filters_with_custom_range(self):
+        in_range = make_item(id=1, href="[lang]/ad/a-ID1", totalPrice={"value": 1500})
+        too_cheap = make_item(id=2, href="[lang]/ad/b-ID2", totalPrice={"value": 100})
+        too_expensive = make_item(id=3, href="[lang]/ad/c-ID3", totalPrice={"value": 9999})
+        result = parse([make_response(in_range, too_cheap, too_expensive)], min_price=300, max_price=4000)
+        assert len(result) == 1
+        assert result[0]["id"] == "1"
+
+    def test_parse_listing_defaults_to_config_prices(self):
+        from config import MAX_PRICE, MIN_PRICE
+
+        assert parse_listing(make_item(totalPrice={"value": MIN_PRICE})) is not None
+        assert parse_listing(make_item(totalPrice={"value": MIN_PRICE - 1})) is None
+        assert parse_listing(make_item(totalPrice={"value": MAX_PRICE + 1})) is None

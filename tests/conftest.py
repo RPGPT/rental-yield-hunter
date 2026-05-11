@@ -37,6 +37,15 @@ def clean_db(db):
     db.commit()
 
 
+@pytest.fixture
+def clean_rental_db(db):
+    yield db
+    db.execute(text("DELETE FROM rental_raw_data"))
+    db.execute(text("DELETE FROM rental_listing_price_history"))
+    db.execute(text("DELETE FROM rental_listings"))
+    db.commit()
+
+
 def make_item(**overrides):
     item = {
         "id": 99999999,

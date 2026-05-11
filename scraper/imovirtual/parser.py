@@ -66,14 +66,22 @@ def build_location(location_obj: dict) -> tuple:
     return raw, neighborhood or None, city or None
 
 
-def parse_listing(item: dict, target_city: Optional[str] = None) -> Optional[dict]:
+def parse_listing(
+    item: dict,
+    target_city: Optional[str] = None,
+    min_price: Optional[int] = None,
+    max_price: Optional[int] = None,
+) -> Optional[dict]:
+    resolved_min = min_price if min_price is not None else MIN_PRICE
+    resolved_max = max_price if max_price is not None else MAX_PRICE
+
     try:
         price_val = (item.get("totalPrice") or {}).get("value")
         if price_val is None:
             return None
 
         price = int(price_val)
-        if price > MAX_PRICE or price < MIN_PRICE:
+        if price > resolved_max or price < resolved_min:
             return None
 
         url = build_url(item.get("href", ""))
@@ -125,13 +133,18 @@ def parse_listing(item: dict, target_city: Optional[str] = None) -> Optional[dic
         return None
 
 
-def parse(responses: list[dict], target_city: Optional[str] = None) -> list[dict]:
+def parse(
+    responses: list[dict],
+    target_city: Optional[str] = None,
+    min_price: Optional[int] = None,
+    max_price: Optional[int] = None,
+) -> list[dict]:
     seen = set()
     listings = []
 
     for response in responses:
         for item in response.get("items", []):
-            listing = parse_listing(item, target_city)
+            listing = parse_listing(item, target_city, min_price=min_price, max_price=max_price)
             if not listing or listing["id"] in seen:
                 continue
             seen.add(listing["id"])

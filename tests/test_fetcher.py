@@ -230,6 +230,104 @@ class TestFetchDetails:
         with pytest.raises(ValueError, match="Unsupported city"):
             fetch_details([{"url": "https://x.com", "is_rented": True}], "Lisboa")
 
+
+_RENTAL_PATHS = {
+    "Porto": (
+        "arrendar/apartamento/porto/",
+        "pt/resultados/arrendar/apartamento/porto/porto.json",
+    ),
+}
+
+
+class TestFetchCustomCityPaths:
+    @patch("scraper.imovirtual.fetcher.curl_requests")
+    @patch("scraper.imovirtual.fetcher.time")
+    def test_fetch_uses_custom_city_paths(self, mock_time, mock_curl):
+        session = MagicMock()
+        mock_curl.Session.return_value = session
+        page = MagicMock(status_code=200)
+        page.json.return_value = {
+            "pageProps": {
+                "data": {
+                    "searchAds": {
+                        "items": [{"totalPrice": {"value": 1200}}],
+                        "pagination": {"totalPages": 1, "totalItems": 1},
+                    }
+                }
+            }
+        }
+        session.get.side_effect = [MagicMock(status_code=200, text=BUILD_ID_HTML), page]
+
+        from scraper.imovirtual.fetcher import fetch
+
+        result = fetch("Porto", city_paths=_RENTAL_PATHS)
+
+        assert len(result) == 1
+        first_call_url = session.get.call_args_list[0][0][0]
+        assert "arrendar" in first_call_url
+
+    @patch("scraper.imovirtual.fetcher.curl_requests")
+    @patch("scraper.imovirtual.fetcher.time")
+    def test_fetch_raises_for_city_not_in_custom_paths(self, mock_time, mock_curl):
+        from scraper.imovirtual.fetcher import fetch
+
+        with pytest.raises(ValueError, match="Unsupported city"):
+            fetch("Maia", city_paths=_RENTAL_PATHS)
+
+    @patch("scraper.imovirtual.fetcher.curl_requests")
+    @patch("scraper.imovirtual.fetcher.time")
+    def test_fetch_respects_custom_max_price(self, mock_time, mock_curl):
+        session = MagicMock()
+        mock_curl.Session.return_value = session
+        page = MagicMock(status_code=200)
+        page.json.return_value = {
+            "pageProps": {
+                "data": {
+                    "searchAds": {
+                        "items": [{"totalPrice": {"value": 5000}}],
+                        "pagination": {"totalPages": 5, "totalItems": 150},
+                    }
+                }
+            }
+        }
+        session.get.side_effect = [MagicMock(status_code=200, text=BUILD_ID_HTML), page]
+
+        from scraper.imovirtual.fetcher import fetch
+
+        result = fetch(CITY, max_price=4000)
+        assert len(result) == 1
+        assert session.get.call_count == 2
+
+    @patch("scraper.imovirtual.fetcher.curl_requests")
+    @patch("scraper.imovirtual.fetcher.time")
+    def test_fetch_details_uses_custom_city_paths(self, mock_time, mock_curl):
+        session = MagicMock()
+        mock_curl.Session.return_value = session
+        detail = MagicMock(status_code=200)
+        detail.json.return_value = {"pageProps": {"ad": {"description": "Apartamento arrendado"}}}
+        session.get.side_effect = [MagicMock(status_code=200, text=BUILD_ID_HTML), detail]
+
+        from scraper.imovirtual.fetcher import fetch_details
+
+        fetch_details(
+            [{"url": "https://www.imovirtual.com/pt/anuncio/x", "title": "", "is_rented": True}],
+            "Porto",
+            city_paths=_RENTAL_PATHS,
+        )
+
+        first_call_url = session.get.call_args_list[0][0][0]
+        assert "arrendar" in first_call_url
+
+    def test_fetch_details_raises_for_city_not_in_custom_paths(self):
+        from scraper.imovirtual.fetcher import fetch_details
+
+        with pytest.raises(ValueError, match="Unsupported city"):
+            fetch_details(
+                [{"url": "https://x.com", "is_rented": True}],
+                "Maia",
+                city_paths=_RENTAL_PATHS,
+            )
+
     @patch("scraper.imovirtual.fetcher.curl_requests")
     @patch("scraper.imovirtual.fetcher.time")
     def test_lifetime_rent_detected_in_full_description_only(self, mock_time, mock_curl):

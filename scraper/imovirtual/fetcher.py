@@ -6,8 +6,8 @@ from typing import Optional
 
 from curl_cffi import requests as curl_requests
 
-from config import MAX_PRICE, REQUEST_DELAY, SUPPORTED_CITIES
-from scraper.imovirtual.constants import BASE_URL, CITY_PATHS
+from config import MAX_PRICE, REQUEST_DELAY
+from scraper.imovirtual.constants import BASE_URL, BUY_CITY_PATHS
 from scraper.utils import is_rented
 
 logger = logging.getLogger(__name__)
@@ -100,11 +100,14 @@ def _fetch_detail(session, url: str, build_id: str) -> Optional[dict]:
     return None
 
 
-def fetch(city: str) -> list[dict]:
-    if city not in SUPPORTED_CITIES:
-        raise ValueError(f"Unsupported city: {city!r}. Supported: {SUPPORTED_CITIES}")
+def fetch(city: str, city_paths: Optional[dict] = None, max_price: Optional[int] = None) -> list[dict]:
+    resolved_paths = city_paths if city_paths is not None else BUY_CITY_PATHS
+    resolved_max_price = max_price if max_price is not None else MAX_PRICE
 
-    search_path, api_path = CITY_PATHS[city]
+    if city not in resolved_paths:
+        raise ValueError(f"Unsupported city: {city!r}. Supported: {list(resolved_paths)}")
+
+    search_path, api_path = resolved_paths[city]
     search_url = BASE_URL + search_path
 
     session = curl_requests.Session(impersonate="chrome")
@@ -139,8 +142,8 @@ def fetch(city: str) -> list[dict]:
             f"{cheapest}€" if cheapest else "?",
         )
 
-        if cheapest and cheapest > MAX_PRICE:
-            logger.info("[%s] Passed %d€ ceiling — stopping", city, MAX_PRICE)
+        if cheapest and cheapest > resolved_max_price:
+            logger.info("[%s] Passed %d€ ceiling — stopping", city, resolved_max_price)
             break
 
         if page >= total_pages or not items:
@@ -151,7 +154,7 @@ def fetch(city: str) -> list[dict]:
     return responses
 
 
-def fetch_details(listings: list[dict], city: str) -> list[dict]:
+def fetch_details(listings: list[dict], city: str, city_paths: Optional[dict] = None) -> list[dict]:
     if not listings:
         return listings
 
@@ -159,10 +162,12 @@ def fetch_details(listings: list[dict], city: str) -> list[dict]:
     if not candidates:
         return listings
 
-    if city not in SUPPORTED_CITIES:
-        raise ValueError(f"Unsupported city: {city!r}. Supported: {SUPPORTED_CITIES}")
+    resolved_paths = city_paths if city_paths is not None else BUY_CITY_PATHS
 
-    search_path, _ = CITY_PATHS[city]
+    if city not in resolved_paths:
+        raise ValueError(f"Unsupported city: {city!r}. Supported: {list(resolved_paths)}")
+
+    search_path, _ = resolved_paths[city]
     search_url = BASE_URL + search_path
 
     session = curl_requests.Session(impersonate="chrome")
