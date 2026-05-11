@@ -53,18 +53,28 @@ def scrape_city(source: str, city: str, listing_type: str = "buy") -> dict:
         "city": city,
         "type": listing_type,
         "fetched": len(listings),
-        "rented": sum(1 for listing in listings if listing.get("is_rented")),
         "price_changes": n_price_changes,
     }
-    logger.info(
-        "Done — %d fetched, %d rented, %d price changes (%s / %s / %s)",
-        stats["fetched"],
-        stats["rented"],
-        stats["price_changes"],
-        source,
-        city,
-        listing_type,
-    )
+    if listing_type == "buy":
+        stats["rented"] = sum(1 for listing in listings if listing.get("is_rented"))
+        logger.info(
+            "Done — %d fetched, %d rented, %d price changes (%s / %s / %s)",
+            stats["fetched"],
+            stats["rented"],
+            stats["price_changes"],
+            source,
+            city,
+            listing_type,
+        )
+    else:
+        logger.info(
+            "Done — %d fetched, %d price changes (%s / %s / %s)",
+            stats["fetched"],
+            stats["price_changes"],
+            source,
+            city,
+            listing_type,
+        )
 
     slug = city.replace(" ", "-")
     pathlib.Path(f"stats-{listing_type}-{slug}.json").write_text(json.dumps(stats))

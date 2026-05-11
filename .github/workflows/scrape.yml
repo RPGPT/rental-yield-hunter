@@ -225,20 +225,20 @@ jobs:
                   fh.write("## 🏠 Scrape Summary\n\nNo stats available — all city jobs may have failed.\n")
                   sys.exit(0)
 
-              def write_table(fh, title, rows):
+              def write_buy_table(fh, rows):
                   if not rows:
                       return
                   total_fetched = sum(r["fetched"] for r in rows)
-                  total_rented  = sum(r["rented"]  for r in rows)
+                  total_rented  = sum(r.get("rented", 0) for r in rows)
                   total_changes = sum(r["price_changes"] for r in rows)
-                  fh.write(f"### {title}\n\n")
+                  fh.write("### 🛒 Buy\n\n")
                   fh.write("| City | Fetched | Rented | Price changes |\n")
                   fh.write("|------|--------:|-------:|--------------:|\n")
                   for r in rows:
                       fh.write(
                           f"| {r['city']} "
                           f"| {r['fetched']} "
-                          f"| {r['rented']} "
+                          f"| {r.get('rented', 0)} "
                           f"| {r['price_changes']} |\n"
                       )
                   fh.write("|------|--------:|-------:|--------------:|\n")
@@ -249,7 +249,28 @@ jobs:
                       f"| **{total_changes}** |\n\n"
                   )
 
+              def write_rent_table(fh, rows):
+                  if not rows:
+                      return
+                  total_fetched = sum(r["fetched"] for r in rows)
+                  total_changes = sum(r["price_changes"] for r in rows)
+                  fh.write("### 🔑 Rent\n\n")
+                  fh.write("| City | Fetched | Price changes |\n")
+                  fh.write("|------|--------:|--------------:|\n")
+                  for r in rows:
+                      fh.write(
+                          f"| {r['city']} "
+                          f"| {r['fetched']} "
+                          f"| {r['price_changes']} |\n"
+                      )
+                  fh.write("|------|--------:|--------------:|\n")
+                  fh.write(
+                      f"| **Total** "
+                      f"| **{total_fetched}** "
+                      f"| **{total_changes}** |\n\n"
+                  )
+
               fh.write("## 🏠 Scrape Summary\n\n")
-              write_table(fh, "🛒 Buy", [r for r in all_rows if r.get("type") == "buy"])
-              write_table(fh, "🔑 Rent", [r for r in all_rows if r.get("type") == "rent"])
+              write_buy_table(fh, [r for r in all_rows if r.get("type") == "buy"])
+              write_rent_table(fh, [r for r in all_rows if r.get("type") == "rent"])
           EOF
