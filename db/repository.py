@@ -215,9 +215,99 @@ _TIERS = [
     },
 ]
 
+# Bulk CTE that runs the full tier waterfall for all eligible listings in one round-trip.
+# {city_clause} is either empty or "AND city = :city".
+_BULK_ESTIMATE_SQL = """
+WITH inputs AS (
+    SELECT id, typology, neighborhood, city, area
+    FROM listings
+    WHERE active = true AND is_deleted = false
+      AND area IS NOT NULL AND typology IS NOT NULL
+      {city_clause}
+),
+t1 AS (
+    SELECT i.id,
+           AVG(r.rent_price_per_m2)::numeric(10,2) AS avg_rpm,
+           COUNT(*)::int                            AS cnt
+    FROM inputs i
+    JOIN rental_listings r
+      ON r.typology     = i.typology
+     AND r.neighborhood = i.neighborhood
+     AND r.area         BETWEEN i.area * :lo AND i.area * :hi
+     AND r.rent_price_per_m2 IS NOT NULL
+     AND r.active = true
+    GROUP BY i.id
+    HAVING COUNT(*) >= :min_samples
+),
+t2 AS (
+    SELECT i.id,
+           AVG(r.rent_price_per_m2)::numeric(10,2) AS avg_rpm,
+           COUNT(*)::int                            AS cnt
+    FROM inputs i
+    JOIN rental_listings r
+      ON r.typology = i.typology
+     AND r.city     = i.city
+     AND r.area     BETWEEN i.area * :lo AND i.area * :hi
+     AND r.rent_price_per_m2 IS NOT NULL
+     AND r.active = true
+    GROUP BY i.id
+    HAVING COUNT(*) >= :min_samples
+),
+t3 AS (
+    SELECT i.id,
+           AVG(r.rent_price_per_m2)::numeric(10,2) AS avg_rpm,
+           COUNT(*)::int                            AS cnt
+    FROM inputs i
+    JOIN rental_listings r
+      ON r.typology     = i.typology
+     AND r.neighborhood = i.neighborhood
+     AND r.rent_price_per_m2 IS NOT NULL
+     AND r.active = true
+    GROUP BY i.id
+    HAVING COUNT(*) >= :min_samples
+),
+t4 AS (
+    SELECT i.id,
+           AVG(r.rent_price_per_m2)::numeric(10,2) AS avg_rpm,
+           COUNT(*)::int                            AS cnt
+    FROM inputs i
+    JOIN rental_listings r
+      ON r.typology = i.typology
+     AND r.city     = i.city
+     AND r.rent_price_per_m2 IS NOT NULL
+     AND r.active = true
+    GROUP BY i.id
+    HAVING COUNT(*) >= :min_samples
+)
+SELECT
+    i.id   AS listing_id,
+    i.area AS area,
+    COALESCE(t1.avg_rpm, t2.avg_rpm, t3.avg_rpm, t4.avg_rpm)      AS avg_rpm,
+    COALESCE(t1.cnt,     t2.cnt,     t3.cnt,     t4.cnt,     0)    AS sample_count,
+    CASE
+        WHEN t1.id IS NOT NULL THEN 'high'
+        WHEN t2.id IS NOT NULL THEN 'medium'
+        WHEN t3.id IS NOT NULL THEN 'medium'
+        WHEN t4.id IS NOT NULL THEN 'low'
+        ELSE 'none'
+    END AS confidence,
+    CASE
+        WHEN t1.id IS NOT NULL THEN 'neighborhood'
+        WHEN t2.id IS NOT NULL THEN 'city'
+        WHEN t3.id IS NOT NULL THEN 'neighborhood_broad'
+        WHEN t4.id IS NOT NULL THEN 'city_broad'
+        ELSE 'none'
+    END AS match_level
+FROM inputs i
+LEFT JOIN t1 ON t1.id = i.id
+LEFT JOIN t2 ON t2.id = i.id
+LEFT JOIN t3 ON t3.id = i.id
+LEFT JOIN t4 ON t4.id = i.id
+"""
+
 
 def compute_rental_estimate(db: Session, listing_id: str) -> Optional[dict]:
-    """Run the tier waterfall and return an estimate dict, or None if inputs are missing."""
+    """Run the tier waterfall for a single listing. Returns None if inputs are missing."""
     row = db.execute(
         text("SELECT typology, neighborhood, city, area FROM listings WHERE id = :id"),
         {"id": listing_id},
@@ -302,21 +392,57 @@ def compute_and_upsert_rental_estimates(db: Session, listing_ids: list[str]) -> 
 
 
 def refresh_rental_estimates(db: Session, city: Optional[str] = None) -> int:
-    """Recompute rental estimates for active, non-deleted buy listings.
+    """Recompute rental estimates for active, non-deleted buy listings using a single bulk query.
 
-    Pass *city* to scope the refresh to a single city; omit to cover all cities.
+    The full tier waterfall is evaluated inside PostgreSQL in one round-trip via CTEs,
+    instead of N×4 individual queries. Pass *city* to scope to a single city.
     """
-    params: dict = {}
-    city_clause = ""
+    city_clause = "AND city = :city" if city else ""
+    params: dict = {
+        "lo": 1 - _AREA_TOLERANCE,
+        "hi": 1 + _AREA_TOLERANCE,
+        "min_samples": _MIN_SAMPLES,
+    }
     if city:
-        city_clause = "AND city = :city"
         params["city"] = city
 
+    label = city or "all cities"
+    logger.info("Refreshing rental estimates (%s)…", label)
+
     rows = db.execute(
-        text(f"SELECT id FROM listings WHERE active = true AND is_deleted = false {city_clause}"),
+        text(_BULK_ESTIMATE_SQL.format(city_clause=city_clause)),
         params,
     ).fetchall()
-    listing_ids = [r[0] for r in rows]
-    label = city or "all cities"
-    logger.info("Refreshing rental estimates for %d active listings (%s)", len(listing_ids), label)
-    return compute_and_upsert_rental_estimates(db, listing_ids)
+
+    if not rows:
+        logger.info("No eligible listings found (%s)", label)
+        return 0
+
+    estimates = [
+        {
+            "listing_id": r.listing_id,
+            "estimated_rent": round(float(r.avg_rpm) * r.area) if r.avg_rpm is not None else None,
+            "avg_rent_per_m2": float(r.avg_rpm) if r.avg_rpm is not None else None,
+            "sample_count": r.sample_count,
+            "confidence": r.confidence,
+            "match_level": r.match_level,
+        }
+        for r in rows
+    ]
+
+    stmt = insert(RentalEstimate).values(estimates)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=["listing_id"],
+        set_={
+            "estimated_rent": stmt.excluded.estimated_rent,
+            "avg_rent_per_m2": stmt.excluded.avg_rent_per_m2,
+            "sample_count": stmt.excluded.sample_count,
+            "confidence": stmt.excluded.confidence,
+            "match_level": stmt.excluded.match_level,
+            "computed_at": text("NOW()"),
+        },
+    )
+    db.execute(stmt)
+    db.commit()
+    logger.info("Refreshed rental estimates for %d listings (%s)", len(estimates), label)
+    return len(estimates)
