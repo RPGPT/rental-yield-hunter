@@ -1,4 +1,4 @@
-from sqlalchemy import TIMESTAMP, Boolean, Column, Float, ForeignKey, Integer, Text
+from sqlalchemy import TIMESTAMP, Boolean, CheckConstraint, Column, Float, ForeignKey, Integer, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql import func
@@ -113,6 +113,15 @@ class RentalListingPriceHistory(Base):
     captured_at = Column(TIMESTAMP, server_default=func.now())
 
     listing = relationship("RentalListing", back_populates="price_history")
+
+
+class UserRole(Base):
+    __tablename__ = "user_roles"
+    __table_args__ = (CheckConstraint("role IN ('user', 'admin')", name="user_roles_role_check"),)
+
+    # user_id matches neon_auth.users.id — no FK enforced across schemas
+    user_id = Column(Text, primary_key=True, comment="neon_auth.users.id")
+    role = Column(Text, nullable=False, server_default="user")
 
 
 class RentalRawData(Base):
