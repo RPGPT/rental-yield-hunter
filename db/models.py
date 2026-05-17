@@ -115,6 +115,14 @@ class RentalListingPriceHistory(Base):
     listing = relationship("RentalListing", back_populates="price_history")
 
 
+class UserHidden(Base):
+    __tablename__ = "user_hidden"
+
+    user_id = Column(Text, primary_key=True, comment="neon_auth.users.id")
+    listing_id = Column(Text, primary_key=True)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+
+
 class UserRole(Base):
     __tablename__ = "user_roles"
     __table_args__ = (CheckConstraint("role IN ('user', 'admin')", name="user_roles_role_check"),)
