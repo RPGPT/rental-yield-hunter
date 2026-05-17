@@ -1,4 +1,4 @@
-from sqlalchemy import TIMESTAMP, Boolean, Column, Float, ForeignKey, Integer, Numeric, Text
+from sqlalchemy import TIMESTAMP, Boolean, Column, Date, Float, ForeignKey, Integer, Numeric, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql import func
@@ -44,6 +44,7 @@ class Listing(Base):
     price_history = relationship("ListingPriceHistory", back_populates="listing")
     raw = relationship("RawData", back_populates="listing", uselist=False)
     rental_estimate = relationship("RentalEstimate", back_populates="listing", uselist=False)
+    contract_detail = relationship("RentContractDetail", back_populates="listing", uselist=False)
 
 
 class ListingPriceHistory(Base):
@@ -147,3 +148,18 @@ class RentalEstimate(Base):
     computed_at = Column(TIMESTAMP, server_default=func.now())
 
     listing = relationship("Listing", back_populates="rental_estimate")
+
+
+class RentContractDetail(Base):
+    __tablename__ = "rent_contract_details"
+
+    listing_id = Column(Text, ForeignKey("listings.id", ondelete="CASCADE"), primary_key=True)
+    current_rent = Column(Numeric(10, 2), nullable=True)
+    contract_expiry_date = Column(Date, nullable=True)
+    raw_rent_text = Column(Text, nullable=True)
+    raw_expiry_text = Column(Text, nullable=True)
+    confidence = Column(Numeric(3, 2), nullable=True)
+    extracted_at = Column(TIMESTAMP, server_default=func.now())
+    updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
+
+    listing = relationship("Listing", back_populates="contract_detail")

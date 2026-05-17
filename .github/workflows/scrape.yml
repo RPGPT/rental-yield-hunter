@@ -193,8 +193,50 @@ jobs:
           path: stats-*.json
           if-no-files-found: warn
 
-  summarise:
+  # ── Contract detail extraction (after buy + rent) ───────────────────────────
+  extract-contracts:
+    if: ${{ always() && !failure() }}
     needs: [scrape-single-buy, scrape-single-rent, scrape-all-buy, scrape-all-rent]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        city:
+          - Porto
+          - Matosinhos
+          - Vila Nova de Gaia
+          - Maia
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - run: python -m alembic upgrade head
+
+      - name: Extract contracts (${{ matrix.city }})
+        run: python main.py --type contracts --city "${{ matrix.city }}"
+
+      - name: Upload stats
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scrape-stats-contracts-${{ matrix.city }}
+          path: stats-*.json
+          if-no-files-found: warn
+
+  summarise:
+    needs: [scrape-single-buy, scrape-single-rent, scrape-all-buy, scrape-all-rent, extract-contracts]
     if: always()
     runs-on: ubuntu-latest
 
@@ -272,4 +314,31 @@ jobs:
               fh.write("## 🏠 Scrape Summary\n\n")
               write_buy_table(fh, [r for r in all_rows if r.get("type") == "buy"])
               write_rent_table(fh, [r for r in all_rows if r.get("type") == "rent"])
+
+              # ── Contract extraction summary ──
+              contract_rows = [r for r in all_rows if r.get("type") == "contracts"]
+              if contract_rows:
+                  fh.write("### 📋 Contract Details\n\n")
+                  fh.write("| City | Processed | Extracted | With Rent | With Expiry |\n")
+                  fh.write("|------|----------:|----------:|----------:|------------:|\n")
+                  for r in contract_rows:
+                      fh.write(
+                          f"| {r['city']} "
+                          f"| {r['processed']} "
+                          f"| {r.get('extracted', 0)} "
+                          f"| {r.get('with_rent', 0)} "
+                          f"| {r.get('with_expiry', 0)} |\n"
+                      )
+                  t_proc = sum(r["processed"] for r in contract_rows)
+                  t_ext = sum(r.get("extracted", 0) for r in contract_rows)
+                  t_rent = sum(r.get("with_rent", 0) for r in contract_rows)
+                  t_exp = sum(r.get("with_expiry", 0) for r in contract_rows)
+                  fh.write("|------|----------|----------|----------|------------|\n")
+                  fh.write(
+                      f"| **Total** "
+                      f"| **{t_proc}** "
+                      f"| **{t_ext}** "
+                      f"| **{t_rent}** "
+                      f"| **{t_exp}** |\n\n"
+                  )
           EOF

@@ -13,6 +13,7 @@ from db.models import (
     RentalListing,
     RentalListingPriceHistory,
     RentalRawData,
+    RentContractDetail,
 )
 
 logger = logging.getLogger(__name__)
@@ -455,3 +456,51 @@ def refresh_rental_estimates(db: Session, city: Optional[str] = None) -> int:
     db.commit()
     logger.info("Refreshed rental estimates for %d listings (%s)", len(estimates), label)
     return len(estimates)
+
+
+# ── Contract detail extraction ───────────────────────────────────────────────
+
+
+def get_rented_listings_for_extraction(db: Session, city: Optional[str] = None) -> list[dict]:
+    """Return active rented listings as dicts ``{id, url, title, description}``."""
+    q = db.query(
+        Listing.id,
+        Listing.url,
+        Listing.title,
+        Listing.description,
+    ).filter(
+        Listing.is_rented.is_(True),
+        Listing.active.is_(True),
+        Listing.is_deleted.is_(False),
+    )
+    if city:
+        q = q.filter(Listing.city == city)
+
+    return [{"id": r.id, "url": r.url, "title": r.title or "", "description": r.description or ""} for r in q.all()]
+
+
+def upsert_contract_details(db: Session, details: list[dict]) -> int:
+    """Bulk upsert extracted contract details.
+
+    Each dict must have: ``listing_id``, ``current_rent``, ``contract_expiry_date``,
+    ``raw_rent_text``, ``raw_expiry_text``, ``confidence``.
+    """
+    if not details:
+        return 0
+
+    stmt = insert(RentContractDetail).values(details)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=["listing_id"],
+        set_={
+            "current_rent": stmt.excluded.current_rent,
+            "contract_expiry_date": stmt.excluded.contract_expiry_date,
+            "raw_rent_text": stmt.excluded.raw_rent_text,
+            "raw_expiry_text": stmt.excluded.raw_expiry_text,
+            "confidence": stmt.excluded.confidence,
+            "updated_at": text("NOW()"),
+        },
+    )
+    db.execute(stmt)
+    db.commit()
+    logger.info("Upserted %d contract details", len(details))
+    return len(details)

@@ -27,6 +27,7 @@ rental-yield-hunter/
 ├── scraper/
 │   ├── base.py                  # Scraper ABC  (fetch → parse → enrich → run)
 │   ├── utils.py                 # shared helpers (is_rented keyword detection)
+│   ├── contract_extractor.py    # regex + dateparser rent/expiry extractor
 │   └── imovirtual/
 │       ├── __init__.py          # ImovirtualBuyScraper, ImovirtualRentalScraper
 │       ├── constants.py         # CITY_PATHS, ESTATE_MAP
