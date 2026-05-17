@@ -143,6 +143,7 @@ class RentalEstimate(Base):
     sample_count = Column(Integer, nullable=True)
     confidence = Column(Text, nullable=True)  # high | medium | low | none
     match_level = Column(Text, nullable=True)  # neighborhood | city | neighborhood_broad | city_broad | none
+    rental_yield = Column(Numeric(5, 4), nullable=True)  # e.g. 0.0612 = 6.12%
     computed_at = Column(TIMESTAMP, server_default=func.now())
 
     listing = relationship("Listing", back_populates="rental_estimate")

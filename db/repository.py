@@ -219,7 +219,7 @@ _TIERS = [
 # {city_clause} is either empty or "AND city = :city".
 _BULK_ESTIMATE_SQL = """
 WITH inputs AS (
-    SELECT id, typology, neighborhood, city, area
+    SELECT id, typology, neighborhood, city, area, price
     FROM listings
     WHERE active = true AND is_deleted = false
       AND area IS NOT NULL AND typology IS NOT NULL
@@ -280,8 +280,9 @@ t4 AS (
     HAVING COUNT(*) >= :min_samples
 )
 SELECT
-    i.id   AS listing_id,
-    i.area AS area,
+    i.id    AS listing_id,
+    i.area  AS area,
+    i.price AS price,
     COALESCE(t1.avg_rpm, t2.avg_rpm, t3.avg_rpm, t4.avg_rpm)      AS avg_rpm,
     COALESCE(t1.cnt,     t2.cnt,     t3.cnt,     t4.cnt,     0)    AS sample_count,
     CASE
@@ -309,14 +310,14 @@ LEFT JOIN t4 ON t4.id = i.id
 def compute_rental_estimate(db: Session, listing_id: str) -> Optional[dict]:
     """Run the tier waterfall for a single listing. Returns None if inputs are missing."""
     row = db.execute(
-        text("SELECT typology, neighborhood, city, area FROM listings WHERE id = :id"),
+        text("SELECT typology, neighborhood, city, area, price FROM listings WHERE id = :id"),
         {"id": listing_id},
     ).fetchone()
 
     if row is None:
         return None
 
-    typology, neighborhood, city, area = row
+    typology, neighborhood, city, area, price = row
 
     if area is None or typology is None:
         return None
@@ -340,13 +341,15 @@ def compute_rental_estimate(db: Session, listing_id: str) -> Optional[dict]:
 
         if result and result.sample_count >= _MIN_SAMPLES:
             avg = float(result.avg_rent_per_m2)
+            estimated_rent = round(avg * area)
             return {
                 "listing_id": listing_id,
-                "estimated_rent": round(avg * area),
+                "estimated_rent": estimated_rent,
                 "avg_rent_per_m2": avg,
                 "sample_count": result.sample_count,
                 "confidence": tier["confidence"],
                 "match_level": tier["match_level"],
+                "rental_yield": round(estimated_rent * 12 / price, 4) if price else None,
             }
 
     return {
@@ -356,6 +359,7 @@ def compute_rental_estimate(db: Session, listing_id: str) -> Optional[dict]:
         "sample_count": 0,
         "confidence": "none",
         "match_level": "none",
+        "rental_yield": None,
     }
 
 
@@ -382,6 +386,7 @@ def compute_and_upsert_rental_estimates(db: Session, listing_ids: list[str]) -> 
             "sample_count": stmt.excluded.sample_count,
             "confidence": stmt.excluded.confidence,
             "match_level": stmt.excluded.match_level,
+            "rental_yield": stmt.excluded.rental_yield,
             "computed_at": text("NOW()"),
         },
     )
@@ -426,6 +431,9 @@ def refresh_rental_estimates(db: Session, city: Optional[str] = None) -> int:
             "sample_count": r.sample_count,
             "confidence": r.confidence,
             "match_level": r.match_level,
+            "rental_yield": round(float(r.avg_rpm) * r.area * 12 / r.price, 4)
+            if r.avg_rpm is not None and r.price
+            else None,
         }
         for r in rows
     ]
@@ -439,6 +447,7 @@ def refresh_rental_estimates(db: Session, city: Optional[str] = None) -> int:
             "sample_count": stmt.excluded.sample_count,
             "confidence": stmt.excluded.confidence,
             "match_level": stmt.excluded.match_level,
+            "rental_yield": stmt.excluded.rental_yield,
             "computed_at": text("NOW()"),
         },
     )
