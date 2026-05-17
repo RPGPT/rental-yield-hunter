@@ -226,10 +226,10 @@ jobs:
           path: stats-*.json
           if-no-files-found: warn
 
-  # ── Refresh rent estimates (after contracts) ─────────────────────────────────
+  # ── Calculate rent estimates (after buy + rent, parallel with contracts) ───
   refresh-estimates:
     if: ${{ always() && !failure() }}
-    needs: [scrape-single-buy, scrape-single-rent, scrape-all-buy, scrape-all-rent, extract-contracts]
+    needs: [scrape-single-buy, scrape-single-rent, scrape-all-buy, scrape-all-rent]
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -248,7 +248,7 @@ jobs:
 
       - run: python -m alembic upgrade head
 
-      - name: Refresh estimates (all cities)
+      - name: Calculate rent estimates (all cities)
         run: python main.py --type estimates
 
       - name: Upload stats
