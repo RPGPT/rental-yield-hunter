@@ -291,14 +291,6 @@ jobs:
           path: stats
         continue-on-error: true
 
-      - name: Download estimates stats
-        uses: actions/download-artifact@v4
-        with:
-          pattern: scrape-stats-estimates-*
-          merge-multiple: true
-          path: stats
-        continue-on-error: true
-
       - name: Write job summary
         run: |
           python - <<'EOF'
