@@ -3,6 +3,7 @@ import json
 import logging
 import pathlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Optional
 
 from config import SUPPORTED_CITIES
 from db.client import Session
@@ -88,18 +89,20 @@ def scrape_city(source: str, city: str, listing_type: str = "buy") -> dict:
     return stats
 
 
-def run_refresh_estimates() -> dict:
-    """Recompute rental estimates for all active buy listings in the DB."""
-    logger.info("Refreshing rental estimates for all active listings…")
+def run_refresh_estimates(city: Optional[str] = None) -> dict:
+    """Recompute rental estimates for active buy listings, optionally scoped to *city*."""
+    label = city or "all cities"
+    logger.info("Refreshing rental estimates (%s)…", label)
     db = Session()
     try:
-        computed = refresh_rental_estimates(db)
+        computed = refresh_rental_estimates(db, city=city)
     finally:
         db.close()
 
-    stats = {"type": "estimates", "computed": computed}
-    pathlib.Path("stats-estimates.json").write_text(json.dumps(stats))
-    logger.info("Done — %d rental estimates computed/updated", computed)
+    slug = city.replace(" ", "-") if city else "all"
+    stats = {"type": "estimates", "city": city or "all", "computed": computed}
+    pathlib.Path(f"stats-estimates-{slug}.json").write_text(json.dumps(stats))
+    logger.info("Done — %d rental estimates computed/updated (%s)", computed, label)
     return stats
 
 
@@ -144,7 +147,7 @@ if __name__ == "__main__":
     args = ap.parse_args()
 
     if args.listing_type == "estimates":
-        run_refresh_estimates()
+        run_refresh_estimates(city=args.city)
     else:
         cities_to_scrape = [args.city] if args.city else SUPPORTED_CITIES
         scrape_all(

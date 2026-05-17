@@ -301,13 +301,22 @@ def compute_and_upsert_rental_estimates(db: Session, listing_ids: list[str]) -> 
     return len(estimates)
 
 
-def refresh_rental_estimates(db: Session) -> int:
-    """Recompute rental estimates for ALL active, non-deleted buy listings in the DB.
+def refresh_rental_estimates(db: Session, city: Optional[str] = None) -> int:
+    """Recompute rental estimates for active, non-deleted buy listings.
 
-    Always covers every city — call this after any rental scrape run,
-    regardless of which city subset was scraped.
+    Pass *city* to scope the refresh to a single city; omit to cover all cities.
     """
-    rows = db.execute(text("SELECT id FROM listings WHERE active = true AND is_deleted = false")).fetchall()
+    params: dict = {}
+    city_clause = ""
+    if city:
+        city_clause = "AND city = :city"
+        params["city"] = city
+
+    rows = db.execute(
+        text(f"SELECT id FROM listings WHERE active = true AND is_deleted = false {city_clause}"),
+        params,
+    ).fetchall()
     listing_ids = [r[0] for r in rows]
-    logger.info("Refreshing rental estimates for %d active listings", len(listing_ids))
+    label = city or "all cities"
+    logger.info("Refreshing rental estimates for %d active listings (%s)", len(listing_ids), label)
     return compute_and_upsert_rental_estimates(db, listing_ids)
