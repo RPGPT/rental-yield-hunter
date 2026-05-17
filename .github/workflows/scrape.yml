@@ -37,89 +37,16 @@ on:
           - "Maia"
 
 jobs:
-  # ── Single city: buy ─────────────────────────────────────────────────────────
-  scrape-single-buy:
-    if: ${{ inputs.city != '' && (inputs.scraping_type == '' || inputs.scraping_type == 'Buy') }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-
-    env:
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
-
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-          cache: pip
-
-      - run: pip install -r requirements.txt
-
-      - run: python -m alembic upgrade head
-
-      - name: Scrape ${{ inputs.city }} (buy)
-        run: |
-          SOURCE=$(echo "${{ inputs.source }}" | tr '[:upper:]' '[:lower:]')
-          python main.py --source "$SOURCE" --city "${{ inputs.city }}" --type buy
-
-      - name: Upload stats
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: scrape-stats-buy-${{ inputs.city }}
-          path: stats-*.json
-          if-no-files-found: warn
-
-  # ── Single city: rent (after buy) ────────────────────────────────────────────
-  scrape-single-rent:
-    if: ${{ always() && !failure() && inputs.city != '' && (inputs.scraping_type == '' || inputs.scraping_type == 'Rent') }}
-    needs: scrape-single-buy
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-
-    env:
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
-
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-          cache: pip
-
-      - run: pip install -r requirements.txt
-
-      - run: python -m alembic upgrade head
-
-      - name: Scrape ${{ inputs.city }} (rent)
-        run: |
-          SOURCE=$(echo "${{ inputs.source }}" | tr '[:upper:]' '[:lower:]')
-          python main.py --source "$SOURCE" --city "${{ inputs.city }}" --type rent
-
-      - name: Upload stats
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: scrape-stats-rent-${{ inputs.city }}
-          path: stats-*.json
-          if-no-files-found: warn
-
-  # ── All cities: buy ───────────────────────────────────────────────────────────
-  scrape-all-buy:
-    if: ${{ (inputs.city == '' || github.event_name == 'schedule') && (inputs.scraping_type == '' || inputs.scraping_type == 'Buy') }}
+  # ── Scrape: buy ──────────────────────────────────────────────────────────────
+  scrape-buy:
+    if: ${{ inputs.scraping_type == '' || inputs.scraping_type == 'Buy' || github.event_name == 'schedule' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
     strategy:
       fail-fast: false
       matrix:
-        city:
-          - Porto
-          - Matosinhos
-          - Vila Nova de Gaia
-          - Maia
+        city: ${{ inputs.city != '' && fromJSON(format('["{0}"]', inputs.city)) || fromJSON('["Porto","Matosinhos","Vila Nova de Gaia","Maia"]') }}
 
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -149,21 +76,17 @@ jobs:
           path: stats-*.json
           if-no-files-found: warn
 
-  # ── All cities: rent (after buy) ──────────────────────────────────────────────
-  scrape-all-rent:
-    if: ${{ always() && !failure() && (inputs.city == '' || github.event_name == 'schedule') && (inputs.scraping_type == '' || inputs.scraping_type == 'Rent') }}
-    needs: scrape-all-buy
+  # ── Scrape: rent (after buy) ─────────────────────────────────────────────────
+  scrape-rent:
+    if: ${{ always() && !failure() && (inputs.scraping_type == '' || inputs.scraping_type == 'Rent' || github.event_name == 'schedule') }}
+    needs: scrape-buy
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
     strategy:
       fail-fast: false
       matrix:
-        city:
-          - Porto
-          - Matosinhos
-          - Vila Nova de Gaia
-          - Maia
+        city: ${{ inputs.city != '' && fromJSON(format('["{0}"]', inputs.city)) || fromJSON('["Porto","Matosinhos","Vila Nova de Gaia","Maia"]') }}
 
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -193,10 +116,10 @@ jobs:
           path: stats-*.json
           if-no-files-found: warn
 
-  # ── Contract detail extraction (after buy + rent) ───────────────────────────
+  # ── Extract contract details (after buy + rent) ─────────────────────────────
   extract-contracts:
     if: ${{ always() && !failure() }}
-    needs: [scrape-single-buy, scrape-single-rent, scrape-all-buy, scrape-all-rent]
+    needs: [scrape-buy, scrape-rent]
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -227,9 +150,9 @@ jobs:
           if-no-files-found: warn
 
   # ── Calculate rent estimates (after buy + rent, parallel with contracts) ───
-  refresh-estimates:
+  calculate-estimates:
     if: ${{ always() && !failure() }}
-    needs: [scrape-single-buy, scrape-single-rent, scrape-all-buy, scrape-all-rent]
+    needs: [scrape-buy, scrape-rent]
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -260,7 +183,7 @@ jobs:
           if-no-files-found: warn
 
   summarise:
-    needs: [scrape-single-buy, scrape-single-rent, scrape-all-buy, scrape-all-rent, extract-contracts, refresh-estimates]
+    needs: [scrape-buy, scrape-rent, extract-contracts, calculate-estimates]
     if: always()
     runs-on: ubuntu-latest
 
