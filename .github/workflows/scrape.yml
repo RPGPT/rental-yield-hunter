@@ -200,15 +200,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
-    strategy:
-      fail-fast: false
-      matrix:
-        city:
-          - Porto
-          - Matosinhos
-          - Vila Nova de Gaia
-          - Maia
-
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
@@ -224,14 +215,14 @@ jobs:
 
       - run: python -m alembic upgrade head
 
-      - name: Extract contracts (${{ matrix.city }})
-        run: python main.py --type contracts --city "${{ matrix.city }}"
+      - name: Extract contracts (all cities)
+        run: python main.py --type contracts
 
       - name: Upload stats
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: scrape-stats-contracts-${{ matrix.city }}
+          name: scrape-stats-contracts
           path: stats-*.json
           if-no-files-found: warn
 
@@ -242,15 +233,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
-    strategy:
-      fail-fast: false
-      matrix:
-        city:
-          - Porto
-          - Matosinhos
-          - Vila Nova de Gaia
-          - Maia
-
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
@@ -266,14 +248,14 @@ jobs:
 
       - run: python -m alembic upgrade head
 
-      - name: Refresh estimates (${{ matrix.city }})
-        run: python main.py --type estimates --city "${{ matrix.city }}"
+      - name: Refresh estimates (all cities)
+        run: python main.py --type estimates
 
       - name: Upload stats
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: scrape-stats-estimates-${{ matrix.city }}
+          name: scrape-stats-estimates
           path: stats-estimates-*.json
           if-no-files-found: warn
 
