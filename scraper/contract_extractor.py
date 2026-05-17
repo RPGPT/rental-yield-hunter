@@ -228,6 +228,14 @@ def _score_rent_candidate(
     # Normalize accents for anchor matching
     neighbourhood_norm = _strip_accents(neighbourhood)
 
+    # Negative signals — per-m² prices, condominium fees
+    tight_right = _strip_accents(text_lower[pos_end : pos_end + 10])
+    tight_left = _strip_accents(text_lower[max(0, pos_start - 30) : pos_start])
+    if re.search(r"/m[²2]|€/m|eur.*m[²2]", tight_right):
+        return 0.0
+    if re.search(r"preco\s*por\s*m[²2]|price\s*per\s*m[²2]|condominio|condominium", tight_left):
+        return 0.0
+
     # Monthly wording nearby is a strong signal
     if _MONTHLY_WORDS.search(neighbourhood):
         score += 0.5
