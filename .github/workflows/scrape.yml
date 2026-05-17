@@ -45,7 +45,7 @@ jobs:
 
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - uses: actions/setup-python@v6
         with:
@@ -70,7 +70,7 @@ jobs:
 
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - uses: actions/setup-python@v6
         with:
@@ -86,7 +86,7 @@ jobs:
 
       - name: Upload stats
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: scrape-stats-buy-${{ matrix.city }}
           path: stats-*.json
@@ -106,7 +106,7 @@ jobs:
 
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - uses: actions/setup-python@v6
         with:
@@ -122,7 +122,7 @@ jobs:
 
       - name: Upload stats
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: scrape-stats-rent-${{ matrix.city }}
           path: stats-*.json
@@ -137,7 +137,7 @@ jobs:
 
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - uses: actions/setup-python@v6
         with:
@@ -151,7 +151,7 @@ jobs:
 
       - name: Upload stats
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: scrape-stats-contracts
           path: stats-*.json
@@ -166,7 +166,7 @@ jobs:
 
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - uses: actions/setup-python@v6
         with:
@@ -180,7 +180,7 @@ jobs:
 
       - name: Upload stats
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: scrape-stats-estimates
           path: stats-estimates-*.json
@@ -193,7 +193,7 @@ jobs:
 
     steps:
       - name: Download all stats artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: scrape-stats-*
           merge-multiple: true
