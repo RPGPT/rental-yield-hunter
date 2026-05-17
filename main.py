@@ -6,7 +6,13 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from config import SUPPORTED_CITIES
 from db.client import Session
-from db.repository import deactivate_missing, deactivate_missing_rentals, upsert_listings, upsert_rental_listings
+from db.repository import (
+    deactivate_missing,
+    deactivate_missing_rentals,
+    refresh_rental_estimates,
+    upsert_listings,
+    upsert_rental_listings,
+)
 from scraper.imovirtual import ImovirtualBuyScraper, ImovirtualRentalScraper
 
 logging.basicConfig(
@@ -82,6 +88,21 @@ def scrape_city(source: str, city: str, listing_type: str = "buy") -> dict:
     return stats
 
 
+def run_refresh_estimates() -> dict:
+    """Recompute rental estimates for all active buy listings in the DB."""
+    logger.info("Refreshing rental estimates for all active listings…")
+    db = Session()
+    try:
+        computed = refresh_rental_estimates(db)
+    finally:
+        db.close()
+
+    stats = {"type": "estimates", "computed": computed}
+    pathlib.Path("stats-estimates.json").write_text(json.dumps(stats))
+    logger.info("Done — %d rental estimates computed/updated", computed)
+    return stats
+
+
 def scrape_all(source: str, cities: list[str], listing_type: str = "buy", parallel: bool = False) -> None:
     if not parallel or len(cities) == 1:
         for city in cities:
@@ -104,15 +125,15 @@ if __name__ == "__main__":
     ap.add_argument(
         "--type",
         dest="listing_type",
-        choices=["buy", "rent"],
+        choices=["buy", "rent", "estimates"],
         default="buy",
-        help="Whether to scrape buy or rental listings.",
+        help="Whether to scrape buy/rental listings or refresh rent estimates (DB-wide).",
     )
     ap.add_argument(
         "--city",
         choices=SUPPORTED_CITIES,
         default=None,
-        help="City to scrape. Omit to scrape all supported cities.",
+        help="City to scrape. Omit to scrape all supported cities. Ignored for --type estimates.",
     )
     ap.add_argument(
         "--parallel",
@@ -122,5 +143,13 @@ if __name__ == "__main__":
     )
     args = ap.parse_args()
 
-    cities_to_scrape = [args.city] if args.city else SUPPORTED_CITIES
-    scrape_all(source=args.source, cities=cities_to_scrape, listing_type=args.listing_type, parallel=args.parallel)
+    if args.listing_type == "estimates":
+        run_refresh_estimates()
+    else:
+        cities_to_scrape = [args.city] if args.city else SUPPORTED_CITIES
+        scrape_all(
+            source=args.source,
+            cities=cities_to_scrape,
+            listing_type=args.listing_type,
+            parallel=args.parallel,
+        )

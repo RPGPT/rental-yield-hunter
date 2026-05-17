@@ -1,4 +1,4 @@
-from sqlalchemy import TIMESTAMP, Boolean, Column, Float, ForeignKey, Integer, Text
+from sqlalchemy import TIMESTAMP, Boolean, Column, Float, ForeignKey, Integer, Numeric, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql import func
@@ -43,6 +43,7 @@ class Listing(Base):
 
     price_history = relationship("ListingPriceHistory", back_populates="listing")
     raw = relationship("RawData", back_populates="listing", uselist=False)
+    rental_estimate = relationship("RentalEstimate", back_populates="listing", uselist=False)
 
 
 class ListingPriceHistory(Base):
@@ -131,3 +132,17 @@ class RentalRawData(Base):
     captured_at = Column(TIMESTAMP, server_default=func.now())
 
     listing = relationship("RentalListing", back_populates="raw")
+
+
+class RentalEstimate(Base):
+    __tablename__ = "rental_estimates"
+
+    listing_id = Column(Text, ForeignKey("listings.id", ondelete="CASCADE"), primary_key=True)
+    estimated_rent = Column(Integer, nullable=True)
+    avg_rent_per_m2 = Column(Numeric(10, 2), nullable=True)
+    sample_count = Column(Integer, nullable=True)
+    confidence = Column(Text, nullable=True)  # high | medium | low | none
+    match_level = Column(Text, nullable=True)  # neighborhood | city | neighborhood_broad | city_broad | none
+    computed_at = Column(TIMESTAMP, server_default=func.now())
+
+    listing = relationship("Listing", back_populates="rental_estimate")

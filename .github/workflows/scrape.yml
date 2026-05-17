@@ -193,8 +193,74 @@ jobs:
           path: stats-*.json
           if-no-files-found: warn
 
+  # ── Single city: rent estimates (after rent, DB-wide) ────────────────────────
+  rent-estimates-single:
+    if: ${{ always() && !failure() && inputs.city != '' }}
+    needs: [scrape-single-buy, scrape-single-rent]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - run: python -m alembic upgrade head
+
+      - name: Refresh rental estimates (all cities)
+        run: python main.py --type estimates
+
+      - name: Upload stats
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scrape-stats-estimates
+          path: stats-estimates.json
+          if-no-files-found: warn
+
+  # ── All cities: rent estimates (after rent, DB-wide) ─────────────────────────
+  rent-estimates-all:
+    if: ${{ always() && !failure() && (inputs.city == '' || github.event_name == 'schedule') }}
+    needs: [scrape-all-buy, scrape-all-rent]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - run: python -m alembic upgrade head
+
+      - name: Refresh rental estimates (all cities)
+        run: python main.py --type estimates
+
+      - name: Upload stats
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scrape-stats-estimates
+          path: stats-estimates.json
+          if-no-files-found: warn
+
   summarise:
-    needs: [scrape-single-buy, scrape-single-rent, scrape-all-buy, scrape-all-rent]
+    needs: [scrape-single-buy, scrape-single-rent, rent-estimates-single, scrape-all-buy, scrape-all-rent, rent-estimates-all]
     if: always()
     runs-on: ubuntu-latest
 
@@ -215,7 +281,7 @@ jobs:
           stats_dir = pathlib.Path("stats")
           all_rows = sorted(
               (json.loads(f.read_text()) for f in stats_dir.glob("stats-*.json")),
-              key=lambda r: r["city"],
+              key=lambda r: r.get("city", ""),
           ) if stats_dir.exists() else []
 
           out = os.environ.get("GITHUB_STEP_SUMMARY", "/dev/stdout")
@@ -269,7 +335,15 @@ jobs:
                       f"| **{total_changes}** |\n\n"
                   )
 
+              def write_estimates_section(fh, rows):
+                  if not rows:
+                      return
+                  total = sum(r.get("computed", 0) for r in rows)
+                  fh.write("### 📊 Rent Estimates\n\n")
+                  fh.write(f"Estimates computed/updated: **{total}**\n\n")
+
               fh.write("## 🏠 Scrape Summary\n\n")
               write_buy_table(fh, [r for r in all_rows if r.get("type") == "buy"])
               write_rent_table(fh, [r for r in all_rows if r.get("type") == "rent"])
+              write_estimates_section(fh, [r for r in all_rows if r.get("type") == "estimates"])
           EOF
