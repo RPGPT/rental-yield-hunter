@@ -235,8 +235,50 @@ jobs:
           path: stats-*.json
           if-no-files-found: warn
 
-  summarise:
+  # ── Refresh rent estimates (after contracts) ─────────────────────────────────
+  refresh-estimates:
+    if: ${{ always() && !failure() }}
     needs: [scrape-single-buy, scrape-single-rent, scrape-all-buy, scrape-all-rent, extract-contracts]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        city:
+          - Porto
+          - Matosinhos
+          - Vila Nova de Gaia
+          - Maia
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - run: python -m alembic upgrade head
+
+      - name: Refresh estimates (${{ matrix.city }})
+        run: python main.py --type estimates --city "${{ matrix.city }}"
+
+      - name: Upload stats
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scrape-stats-estimates-${{ matrix.city }}
+          path: stats-estimates-*.json
+          if-no-files-found: warn
+
+  summarise:
+    needs: [scrape-single-buy, scrape-single-rent, scrape-all-buy, scrape-all-rent, extract-contracts, refresh-estimates]
     if: always()
     runs-on: ubuntu-latest
 
@@ -245,6 +287,14 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: scrape-stats-*
+          merge-multiple: true
+          path: stats
+        continue-on-error: true
+
+      - name: Download estimates stats
+        uses: actions/download-artifact@v4
+        with:
+          pattern: scrape-stats-estimates-*
           merge-multiple: true
           path: stats
         continue-on-error: true
@@ -341,4 +391,19 @@ jobs:
                       f"| **{t_rent}** "
                       f"| **{t_exp}** |\n\n"
                   )
+
+              # ── Rent estimates summary ──
+              est_rows = sorted(
+                  (json.loads(f.read_text()) for f in stats_dir.glob("stats-estimates-*.json")),
+                  key=lambda r: r.get("city", ""),
+              ) if stats_dir.exists() else []
+              if est_rows:
+                  fh.write("### 📊 Rent Estimates\n\n")
+                  fh.write("| City | Estimates updated |\n")
+                  fh.write("|------|------------------:|\n")
+                  for r in est_rows:
+                      fh.write(f"| {r['city']} | {r.get('computed', 0)} |\n")
+                  total_est = sum(r.get("computed", 0) for r in est_rows)
+                  fh.write("|------|-------------------|\n")
+                  fh.write(f"| **Total** | **{total_est}** |\n\n")
           EOF
