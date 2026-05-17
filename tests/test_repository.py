@@ -4,6 +4,7 @@ from sqlalchemy import text
 
 from db.models import Listing, ListingPriceHistory, RawData, RentalListing, RentalListingPriceHistory, RentalRawData
 from db.repository import (
+    _get_existing,
     _sanitize_url,
     deactivate_missing,
     deactivate_missing_rentals,
@@ -471,3 +472,47 @@ class TestDeactivateMissingRentals:
         clean_rental_db.expire_all()
         assert clean_rental_db.query(RentalListing).filter_by(id="r-porto").first().active is False
         assert clean_rental_db.query(RentalListing).filter_by(id="r-maia").first().active is True
+
+
+class TestGetExisting:
+    def test_empty_ids_returns_empty_dict(self, db):
+        # Exercises the early-return branch in _get_existing when ids=[]
+        result = _get_existing(db, [], "listings")
+        assert result == {}
+
+
+class TestUpsertWithoutUrl:
+    def test_listing_without_url_key_skips_sanitize(self):
+        # A listing without a "url" key exercises the `if "url" in listing` False branch.
+        # We use a mock session so the DB NOT NULL constraint is irrelevant.
+        from unittest.mock import MagicMock, patch
+
+        from db import repository
+
+        sanitized = []
+        original = repository._sanitize_url
+
+        def spy(url):
+            sanitized.append(url)
+            return original(url)
+
+        mock_db = MagicMock()
+        mock_db.execute.return_value.fetchall.return_value = []
+
+        no_url = {k: v for k, v in _BASE.items() if k != "url"}
+        no_url["id"] = "no-url-id"
+
+        with patch.object(repository, "_sanitize_url", side_effect=spy):
+            repository._upsert(
+                mock_db,
+                [
+                    {**_BASE, "id": "has-url"},  # url present → sanitized
+                    no_url,  # url absent → branch False, sanitize not called
+                ],
+                repository.Listing,
+                repository.ListingPriceHistory,
+                repository.RawData,
+            )
+
+        # sanitize was called exactly once (only for the listing that has "url")
+        assert len(sanitized) == 1

@@ -264,3 +264,34 @@ class TestRefreshRentalEstimates:
     def test_returns_zero_when_no_listings(self, estimate_db):
         count = refresh_rental_estimates(estimate_db)
         assert count == 0
+
+    def test_scoped_to_city(self, estimate_db):
+        # Exercises the `if city:` branch (line 412) in refresh_rental_estimates
+        _insert_listing(estimate_db, id="city-buy-1", city="Lisboa", neighborhood="Belém", typology="T1", area=50)
+        _insert_listing(estimate_db, id="city-buy-2", city="Porto", neighborhood="Paranhos", typology="T2", area=80)
+        _insert_rentals(
+            estimate_db,
+            3,
+            id_prefix="city-r1",
+            city="Lisboa",
+            neighborhood="Belém",
+            typology="T1",
+            area=50,
+            rent_price_per_m2=14.0,
+        )
+        _insert_rentals(
+            estimate_db,
+            3,
+            id_prefix="city-r2",
+            city="Porto",
+            neighborhood="Paranhos",
+            typology="T2",
+            area=80,
+            rent_price_per_m2=12.0,
+        )
+
+        count = refresh_rental_estimates(estimate_db, city="Lisboa")
+
+        assert count == 1
+        assert estimate_db.query(RentalEstimate).filter_by(listing_id="city-buy-1").first() is not None
+        assert estimate_db.query(RentalEstimate).filter_by(listing_id="city-buy-2").first() is None
