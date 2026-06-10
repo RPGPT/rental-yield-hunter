@@ -77,6 +77,8 @@ def parse_listing(
 
         if not item.get("IsOnline", True):
             return None
+        if (item.get("BusinessStatus") or {}).get("Id") != 1:
+            return None
 
         url = item.get("DetailUrl") or ""
         if not url:
