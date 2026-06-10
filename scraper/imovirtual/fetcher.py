@@ -1,14 +1,13 @@
 import json
 import logging
 import time
-import unicodedata
 from typing import Optional
 
 from curl_cffi import requests as curl_requests
 
 from config import MAX_PRICE, REQUEST_DELAY
 from scraper.imovirtual.constants import BASE_URL, BUY_CITY_PATHS
-from scraper.utils import is_rented
+from scraper.utils import is_lifetime_rent, is_rented
 
 logger = logging.getLogger(__name__)
 
@@ -32,11 +31,6 @@ def min_price(items: list) -> Optional[int]:
             return int(value)
     return None
 
-
-def _is_lifetime_rent(text: str) -> bool:
-    normalized = unicodedata.normalize("NFD", text.lower())
-    stripped = "".join(c for c in normalized if unicodedata.category(c) != "Mn")
-    return "vitalicio" in stripped or "vitalicia" in stripped
 
 
 def _get_build_id(session, search_url: str) -> Optional[str]:
@@ -191,7 +185,7 @@ def fetch_details(listings: list[dict], city: str, city_paths: Optional[dict] = 
             combined = f"{description} {full_description}".strip()
             listing["description"] = description
             listing["is_rented"] = is_rented(f"{listing.get('title', '')} {combined}")
-            listing["lifetime_rent"] = _is_lifetime_rent(combined)
+            listing["lifetime_rent"] = is_lifetime_rent(combined)
             if isinstance(listing.get("_raw_json"), dict):
                 listing["_raw_json"]["fullDescription"] = full_description
             enriched += 1

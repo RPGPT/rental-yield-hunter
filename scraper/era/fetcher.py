@@ -6,7 +6,8 @@ from typing import Optional
 from curl_cffi import requests as curl_requests
 
 from config import REQUEST_DELAY
-from scraper.era.constants import BASE_URL, MODULE_ID, SEARCH_API_PATH, TAB_ID
+from scraper.era.constants import BASE_URL, DETAIL_MODULE_ID, DETAIL_TAB_ID, MODULE_ID, SEARCH_API_PATH, TAB_ID
+from scraper.utils import is_lifetime_rent, is_rented
 
 logger = logging.getLogger(__name__)
 
@@ -121,3 +122,60 @@ def fetch(city: str, city_config: dict, business_type_id: int, max_price: Option
         time.sleep(REQUEST_DELAY)
 
     return results
+
+
+def _fetch_single_detail(session, token: str, reference: str, referer: str) -> Optional[str]:
+    """Return the Description text for one ERA listing, or None on failure."""
+    resp = session.get(
+        BASE_URL + "API/ServicesModule/Property/PropertyDetailByReference",
+        params={"reference": reference},
+        headers={
+            "Accept": "application/json",
+            "RequestVerificationToken": token,
+            "ModuleId": DETAIL_MODULE_ID,
+            "TabId": DETAIL_TAB_ID,
+            "Referer": referer,
+            "Accept-Language": "pt-PT,pt;q=0.9",
+        },
+    )
+    if resp.status_code == 200:
+        return resp.json().get("Description") or ""
+    logger.debug("[ERA] Detail fetch for ref %s returned %d", reference, resp.status_code)
+    return None
+
+
+def fetch_details(listings: list[dict], city: str, city_config: dict) -> list[dict]:
+    """Enrich all buy listings with full description for is_rented / lifetime_rent detection."""
+    if not listings:
+        return listings
+
+    _, search_path = city_config[city]
+    search_url = BASE_URL + search_path
+
+    session = curl_requests.Session(impersonate="chrome")
+    token_data = _get_token(session, search_url)
+    if not token_data:
+        logger.warning("[ERA/%s] Could not get token — skipping detail enrichment", city)
+        return listings
+
+    token, _, _ = token_data  # CSRF token is session-wide; detail module IDs are hardcoded
+    enriched = 0
+
+    for i, listing in enumerate(listings):
+        reference = listing["id"].removeprefix("era-")
+        description = _fetch_single_detail(session, token, reference, listing.get("url", ""))
+
+        if description is not None:
+            combined = f"{listing.get('title', '')} {description}".strip()
+            listing["description"] = description
+            listing["is_rented"] = is_rented(combined)
+            listing["lifetime_rent"] = is_lifetime_rent(combined)
+            enriched += 1
+
+        if (i + 1) % 20 == 0:
+            logger.info("[ERA/%s] Detail %d/%d fetched", city, i + 1, len(listings))
+
+        time.sleep(REQUEST_DELAY)
+
+    logger.info("[ERA/%s] Enriched %d/%d listings with description", city, enriched, len(listings))
+    return listings

@@ -1,7 +1,7 @@
 import config
 from scraper.base import Scraper
 from scraper.era.constants import BUSINESS_TYPE_BUY, BUSINESS_TYPE_RENT, CITY_CONFIG
-from scraper.era.fetcher import fetch
+from scraper.era.fetcher import fetch, fetch_details
 from scraper.era.parser import parse
 
 
@@ -32,6 +32,9 @@ class ERABuyScraper(ERABaseScraper):
     MIN_PRICE = config.MIN_PRICE
     MAX_PRICE = config.MAX_PRICE
     BUSINESS_TYPE_ID = BUSINESS_TYPE_BUY
+
+    def enrich(self, listings):
+        return fetch_details(listings, self.city, self.CITY_CONFIG)
 
 
 class ERARentalScraper(ERABaseScraper):

@@ -7,6 +7,10 @@ SEARCH_API_PATH = "API/ServicesModule/Property/Search"
 MODULE_ID = "410"
 TAB_ID = "36"
 
+# Detail page module/tab IDs (renderPropertyDetail component)
+DETAIL_MODULE_ID = "641"
+DETAIL_TAB_ID = "256"
+
 BUSINESS_TYPE_BUY = 1
 BUSINESS_TYPE_RENT = 2
 
