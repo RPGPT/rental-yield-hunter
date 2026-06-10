@@ -16,6 +16,7 @@ on:
         type: choice
         options:
           - Imovirtual
+          - ERA
       scraping_type:
         description: "Scraping type (leave empty to scrape both)"
         required: false

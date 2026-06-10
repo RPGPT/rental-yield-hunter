@@ -18,6 +18,7 @@ from db.repository import (
     upsert_rental_listings,
 )
 from scraper.contract_extractor import extract_rent_and_expiry
+from scraper.era import ERABuyScraper, ERARentalScraper
 from scraper.imovirtual import ImovirtualBuyScraper, ImovirtualRentalScraper
 from scraper.imovirtual.fetcher import _fetch_detail, _get_build_id
 
@@ -31,6 +32,10 @@ SCRAPERS = {
     "imovirtual": {
         "buy": ImovirtualBuyScraper,
         "rent": ImovirtualRentalScraper,
+    },
+    "era": {
+        "buy": ERABuyScraper,
+        "rent": ERARentalScraper,
     },
 }
 
