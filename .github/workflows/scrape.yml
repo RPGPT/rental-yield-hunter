@@ -41,7 +41,7 @@ on:
 jobs:
   # ── Migrate database ────────────────────────────────────────────────────────
   migrate:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
 
 
@@ -61,7 +61,7 @@ jobs:
   scrape-buy:
     needs: migrate
     if: ${{ inputs.scraping_type == '' || inputs.scraping_type == 'Buy' || github.event_name == 'schedule' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
 
     strategy:
@@ -97,7 +97,7 @@ jobs:
   scrape-rent:
     if: ${{ always() && !failure() && (inputs.scraping_type == '' || inputs.scraping_type == 'Rent' || github.event_name == 'schedule') }}
     needs: scrape-buy
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
 
     strategy:
@@ -133,7 +133,7 @@ jobs:
   extract-contracts:
     if: ${{ always() && !failure() }}
     needs: [scrape-buy, scrape-rent]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
 
 
@@ -162,7 +162,7 @@ jobs:
   calculate-estimates:
     if: ${{ always() && !failure() }}
     needs: [scrape-buy, scrape-rent]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
 
 
@@ -190,7 +190,7 @@ jobs:
   summarise:
     needs: [scrape-buy, scrape-rent, extract-contracts, calculate-estimates]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
 
     steps:
       - name: Download all stats artifacts
