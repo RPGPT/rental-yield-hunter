@@ -32,7 +32,6 @@ def min_price(items: list) -> Optional[int]:
     return None
 
 
-
 def _get_build_id(session, search_url: str) -> Optional[str]:
     resp = session.get(
         search_url,

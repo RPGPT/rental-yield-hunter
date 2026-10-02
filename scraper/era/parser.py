@@ -153,7 +153,7 @@ def parse(
             seen.add(listing["id"])
             listings.append(listing)
 
-    rented = sum(1 for l in listings if l.get("is_rented"))
+    rented = sum(1 for item in listings if item.get("is_rented"))
     if listing_type == "buy":
         logger.info("ERA parsed %d unique listings — %d flagged as rented", len(listings), rented)
     else:

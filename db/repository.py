@@ -21,6 +21,15 @@ logger = logging.getLogger(__name__)
 _EXCLUDE_FROM_INSERT = {"first_seen", "created_at", "is_deleted"}
 _EXCLUDE_FROM_UPSERT = {"first_seen", "created_at", "is_deleted", "id", "source"}
 
+# Postgres allows at most 65,535 bind parameters per statement; chunking multi-row
+# inserts keeps rows * columns well under that limit.
+_INSERT_CHUNK_SIZE = 500
+
+
+def _chunks(rows: list, size: int = _INSERT_CHUNK_SIZE):
+    for i in range(0, len(rows), size):
+        yield rows[i : i + size]
+
 
 def _sanitize_url(url: Optional[str]) -> Optional[str]:
     if not url:
@@ -73,17 +82,19 @@ def _upsert(
 
     clean = [{k: v for k, v in listing.items() if k in listing_columns} for listing in listings]
 
-    stmt = insert(listing_model).values(clean)
-    stmt = stmt.on_conflict_do_update(
-        index_elements=["id"],
-        set_={col: getattr(stmt.excluded, col) for col in upsert_set},
-        # Never touch a row that has been manually deleted
-        where=listing_model.is_deleted.is_(False),
-    )
-    db.execute(stmt)
+    for chunk in _chunks(clean):
+        stmt = insert(listing_model).values(chunk)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["id"],
+            set_={col: getattr(stmt.excluded, col) for col in upsert_set},
+            # Never touch a row that has been manually deleted
+            where=listing_model.is_deleted.is_(False),
+        )
+        db.execute(stmt)
 
     if price_changes:
-        db.execute(insert(price_history_model).values(price_changes))
+        for chunk in _chunks(price_changes):
+            db.execute(insert(price_history_model).values(chunk))
         logger.info("Recorded %d price changes", len(price_changes))
     if reactivated:
         logger.info("Reactivated %d listings: %s", len(reactivated), reactivated)
@@ -96,15 +107,16 @@ def _upsert(
     if raw_rows:
         raw_rows = [r for r in raw_rows if not existing.get(r["listing_id"], {}).get("is_deleted")]
     if raw_rows:
-        raw_stmt = insert(raw_data_model).values(raw_rows)
-        raw_stmt = raw_stmt.on_conflict_do_update(
-            index_elements=["listing_id"],
-            set_={
-                "raw_json": raw_stmt.excluded.raw_json,
-                "captured_at": text("NOW()"),
-            },
-        )
-        db.execute(raw_stmt)
+        for chunk in _chunks(raw_rows):
+            raw_stmt = insert(raw_data_model).values(chunk)
+            raw_stmt = raw_stmt.on_conflict_do_update(
+                index_elements=["listing_id"],
+                set_={
+                    "raw_json": raw_stmt.excluded.raw_json,
+                    "captured_at": text("NOW()"),
+                },
+            )
+            db.execute(raw_stmt)
 
     db.commit()
     return len(price_changes)
