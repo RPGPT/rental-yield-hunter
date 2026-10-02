@@ -5,6 +5,7 @@ maps them onto a single canonical neighborhood, and fixes the city when the
 parish belongs to another municipality.
 """
 
+import re
 from typing import Optional
 
 PORTO_CENTRO = "Cedofeita, Santo Ildefonso, Sé, Miragaia, São Nicolau e Vitória"
@@ -134,6 +135,34 @@ _NEIGHBORHOOD_CITY: dict[str, str] = {
     MAT_SAO_MAMEDE: "Matosinhos",
 }
 
+# not real freguesias: fall back to the city name
+_GENERIC_NEIGHBORHOODS = {
+    k.casefold()
+    for k in (
+        "Bairro das Artes",
+        "Constituição",
+        "Condominhas",
+        "ESMAE",
+        "Faria Guimarães",
+        "Campo Salgueiros",
+        "Pedra Verde",
+        "Maternidade Júlio Dinis",
+        "Falcão",
+        "Rio Tinto",
+        "Porto",
+        "Feiteira",
+        "Loureiro",
+        "Per",
+        "Vila Nova de Gaia",
+        "Azenha de Cima",
+        "Almeiriga",
+        "Centro",
+        "Matosinhos",
+        "Maia",
+    )
+}
+_CODE_RE = re.compile(r"^[A-Z]\d+\s*-\s")
+
 _LOOKUP = {k.casefold(): v for k, v in _NEIGHBORHOOD_ALIASES.items()}
 
 
@@ -141,6 +170,10 @@ def normalize_location(neighborhood: Optional[str], city: Optional[str]) -> tupl
     """Return canonical (neighborhood, city)."""
     if neighborhood:
         neighborhood = neighborhood.strip()
+        if neighborhood.casefold() in _GENERIC_NEIGHBORHOODS or _CODE_RE.match(neighborhood):
+            return (city, city) if city else (neighborhood, city)
         neighborhood = _LOOKUP.get(neighborhood.casefold(), neighborhood)
         city = _NEIGHBORHOOD_CITY.get(neighborhood, city)
+    elif city:
+        neighborhood = city
     return neighborhood, city

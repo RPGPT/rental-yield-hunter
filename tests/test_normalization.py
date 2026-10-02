@@ -13,10 +13,16 @@ def test_city_corrected_when_parish_belongs_elsewhere():
 
 
 def test_unknown_and_none_untouched():
-    assert normalize_location("Loureiro", "Vila Nova de Gaia") == ("Loureiro", "Vila Nova de Gaia")
-    assert normalize_location(None, "Porto") == (None, "Porto")
+    assert normalize_location("Lugar X", "Vila Nova de Gaia") == ("Lugar X", "Vila Nova de Gaia")
+    assert normalize_location(None, None) == (None, None)
 
 
 def test_new_city_union_parishes():
     assert normalize_location("Frazão Arreigada", "Paços de Ferreira") == ("Frazão e Arreigada", "Paços de Ferreira")
     assert normalize_location("Guilhufe e Urrô", "Penafiel") == ("Guilhufe e Urrô", "Penafiel")
+
+
+def test_generic_or_missing_neighborhood_becomes_city():
+    assert normalize_location("Rio Tinto", "Porto") == ("Porto", "Porto")
+    assert normalize_location("C4 - Ramos", "Vila Nova de Gaia") == ("Vila Nova de Gaia", "Vila Nova de Gaia")
+    assert normalize_location(None, "Porto") == ("Porto", "Porto")
