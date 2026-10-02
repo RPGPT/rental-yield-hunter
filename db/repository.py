@@ -390,20 +390,21 @@ def compute_and_upsert_rental_estimates(db: Session, listing_ids: list[str]) -> 
     if not estimates:
         return 0
 
-    stmt = insert(RentalEstimate).values(estimates)
-    stmt = stmt.on_conflict_do_update(
-        index_elements=["listing_id"],
-        set_={
-            "estimated_rent": stmt.excluded.estimated_rent,
-            "avg_rent_per_m2": stmt.excluded.avg_rent_per_m2,
-            "sample_count": stmt.excluded.sample_count,
-            "confidence": stmt.excluded.confidence,
-            "match_level": stmt.excluded.match_level,
-            "rental_yield": stmt.excluded.rental_yield,
-            "computed_at": text("NOW()"),
-        },
-    )
-    db.execute(stmt)
+    for chunk in _chunks(estimates):
+        stmt = insert(RentalEstimate).values(chunk)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["listing_id"],
+            set_={
+                "estimated_rent": stmt.excluded.estimated_rent,
+                "avg_rent_per_m2": stmt.excluded.avg_rent_per_m2,
+                "sample_count": stmt.excluded.sample_count,
+                "confidence": stmt.excluded.confidence,
+                "match_level": stmt.excluded.match_level,
+                "rental_yield": stmt.excluded.rental_yield,
+                "computed_at": text("NOW()"),
+            },
+        )
+        db.execute(stmt)
     db.commit()
     logger.info("Computed rental estimates for %d listings", len(estimates))
     return len(estimates)
@@ -451,20 +452,21 @@ def refresh_rental_estimates(db: Session, city: Optional[str] = None) -> int:
         for r in rows
     ]
 
-    stmt = insert(RentalEstimate).values(estimates)
-    stmt = stmt.on_conflict_do_update(
-        index_elements=["listing_id"],
-        set_={
-            "estimated_rent": stmt.excluded.estimated_rent,
-            "avg_rent_per_m2": stmt.excluded.avg_rent_per_m2,
-            "sample_count": stmt.excluded.sample_count,
-            "confidence": stmt.excluded.confidence,
-            "match_level": stmt.excluded.match_level,
-            "rental_yield": stmt.excluded.rental_yield,
-            "computed_at": text("NOW()"),
-        },
-    )
-    db.execute(stmt)
+    for chunk in _chunks(estimates):
+        stmt = insert(RentalEstimate).values(chunk)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["listing_id"],
+            set_={
+                "estimated_rent": stmt.excluded.estimated_rent,
+                "avg_rent_per_m2": stmt.excluded.avg_rent_per_m2,
+                "sample_count": stmt.excluded.sample_count,
+                "confidence": stmt.excluded.confidence,
+                "match_level": stmt.excluded.match_level,
+                "rental_yield": stmt.excluded.rental_yield,
+                "computed_at": text("NOW()"),
+            },
+        )
+        db.execute(stmt)
     db.commit()
     logger.info("Refreshed rental estimates for %d listings (%s)", len(estimates), label)
     return len(estimates)
@@ -500,19 +502,20 @@ def upsert_contract_details(db: Session, details: list[dict]) -> int:
     if not details:
         return 0
 
-    stmt = insert(RentContractDetail).values(details)
-    stmt = stmt.on_conflict_do_update(
-        index_elements=["listing_id"],
-        set_={
-            "current_rent": stmt.excluded.current_rent,
-            "contract_expiry_date": stmt.excluded.contract_expiry_date,
-            "raw_rent_text": stmt.excluded.raw_rent_text,
-            "raw_expiry_text": stmt.excluded.raw_expiry_text,
-            "confidence": stmt.excluded.confidence,
-            "updated_at": text("NOW()"),
-        },
-    )
-    db.execute(stmt)
+    for chunk in _chunks(details):
+        stmt = insert(RentContractDetail).values(chunk)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["listing_id"],
+            set_={
+                "current_rent": stmt.excluded.current_rent,
+                "contract_expiry_date": stmt.excluded.contract_expiry_date,
+                "raw_rent_text": stmt.excluded.raw_rent_text,
+                "raw_expiry_text": stmt.excluded.raw_expiry_text,
+                "confidence": stmt.excluded.confidence,
+                "updated_at": text("NOW()"),
+            },
+        )
+        db.execute(stmt)
     db.commit()
     logger.info("Upserted %d contract details", len(details))
     return len(details)
