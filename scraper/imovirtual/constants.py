@@ -21,6 +21,26 @@ BUY_CITY_PATHS: dict[str, tuple[str, str]] = {
         "comprar/apartamento/maia/",
         "pt/resultados/comprar/apartamento/porto/maia.json",
     ),
+    "Paços de Ferreira": (
+        "comprar/apartamento/pacos-de-ferreira/",
+        "pt/resultados/comprar/apartamento/porto/pacos-de-ferreira.json",
+    ),
+    "Penafiel": (
+        "comprar/apartamento/penafiel/",
+        "pt/resultados/comprar/apartamento/porto/penafiel.json",
+    ),
+    "Paredes": (
+        "comprar/apartamento/paredes/",
+        "pt/resultados/comprar/apartamento/porto/paredes.json",
+    ),
+    "Ermesinde": (
+        "comprar/apartamento/porto/valongo/ermesinde/",
+        "pt/resultados/comprar/apartamento/porto/valongo/ermesinde.json",
+    ),
+    "Alfena": (
+        "comprar/apartamento/porto/valongo/alfena/",
+        "pt/resultados/comprar/apartamento/porto/valongo/alfena.json",
+    ),
 }
 
 RENTAL_CITY_PATHS: dict[str, tuple[str, str]] = {
@@ -39,6 +59,26 @@ RENTAL_CITY_PATHS: dict[str, tuple[str, str]] = {
     "Maia": (
         "arrendar/apartamento/maia/",
         "pt/resultados/arrendar/apartamento/porto/maia.json",
+    ),
+    "Paços de Ferreira": (
+        "arrendar/apartamento/pacos-de-ferreira/",
+        "pt/resultados/arrendar/apartamento/porto/pacos-de-ferreira.json",
+    ),
+    "Penafiel": (
+        "arrendar/apartamento/penafiel/",
+        "pt/resultados/arrendar/apartamento/porto/penafiel.json",
+    ),
+    "Paredes": (
+        "arrendar/apartamento/paredes/",
+        "pt/resultados/arrendar/apartamento/porto/paredes.json",
+    ),
+    "Ermesinde": (
+        "arrendar/apartamento/porto/valongo/ermesinde/",
+        "pt/resultados/arrendar/apartamento/porto/valongo/ermesinde.json",
+    ),
+    "Alfena": (
+        "arrendar/apartamento/porto/valongo/alfena/",
+        "pt/resultados/arrendar/apartamento/porto/valongo/alfena.json",
     ),
 }
 

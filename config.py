@@ -9,7 +9,15 @@ SUPPORTED_CITIES = [
     "Matosinhos",
     "Vila Nova de Gaia",
     "Maia",
+    "Paços de Ferreira",
+    "Penafiel",
+    "Paredes",
+    "Ermesinde",
+    "Alfena",
 ]
+
+# Freguesias of Valongo scraped as their own "city" (stored city = the freguesia name).
+PARISH_CITIES = {"Ermesinde", "Alfena"}
 
 RENTED_KEYWORDS = [
     "arrendado",

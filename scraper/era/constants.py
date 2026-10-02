@@ -22,7 +22,17 @@ CITY_CONFIG: dict[str, tuple[str, str]] = {
     "Matosinhos": ("13-08", "comprar/apartamentos/matosinhos"),
     "Vila Nova de Gaia": ("13-17", "comprar/apartamentos/vila-nova-de-gaia"),
     "Maia": ("13-06", "comprar/apartamentos/maia"),
+    "Paços de Ferreira": ("13-09", "comprar/apartamentos/pacos-de-ferreira"),
+    "Paredes": ("13-10", "comprar/apartamentos/paredes"),
+    "Penafiel": ("13-11", "comprar/apartamentos/penafiel"),
+    # Ermesinde and Alfena are freguesias of Valongo; ERA only exposes the municipality
+    "Ermesinde": ("13-15", "comprar/apartamentos/valongo"),
+    "Alfena": ("13-15", "comprar/apartamentos/valongo"),
 }
+
+# ERA's Localization suffix is often the district ("Meixomil, Porto") rather than the
+# municipality, so for these cities we trust the municipality-scoped search instead.
+SEARCH_SCOPED_CITIES = {"Paços de Ferreira", "Paredes", "Penafiel", "Ermesinde", "Alfena"}
 
 PROPERTY_TYPE_MAP = {
     "Apartamento": "apartment",

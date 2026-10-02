@@ -3,7 +3,8 @@ import re
 from datetime import datetime, timezone
 from typing import Optional
 
-from scraper.era.constants import PROPERTY_TYPE_MAP, SOURCE
+from config import PARISH_CITIES
+from scraper.era.constants import PROPERTY_TYPE_MAP, SEARCH_SCOPED_CITIES, SOURCE
 from scraper.utils import is_rented
 
 logger = logging.getLogger(__name__)
@@ -93,7 +94,16 @@ def parse_listing(
         localization = item.get("Localization") or ""
         location, neighborhood, city = _parse_location(localization)
 
-        if target_city is not None and city and city != target_city:
+        if target_city in SEARCH_SCOPED_CITIES:
+            parts = [p.strip() for p in localization.split(",") if p.strip()]
+            if target_city in PARISH_CITIES:
+                if target_city not in parts:
+                    return None
+                neighborhood = target_city
+            else:
+                neighborhood = re.sub(r"^\d+-\s*", "", parts[0]) if parts else None
+            city = target_city
+        elif target_city is not None and city and city != target_city:
             return None
 
         area = item.get("ListingArea")

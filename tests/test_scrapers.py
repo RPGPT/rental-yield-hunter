@@ -144,3 +144,16 @@ class TestImovirtualBaseScraperRun:
 
         with pytest.raises(ValueError, match="Unsupported city"):
             fetch("Lisboa", city_paths=RENTAL_CITY_PATHS)
+
+
+def test_new_cities_configured_for_both_sources():
+    from config import PARISH_CITIES, SUPPORTED_CITIES
+    from scraper.era.constants import CITY_CONFIG
+    from scraper.imovirtual.constants import BUY_CITY_PATHS, RENTAL_CITY_PATHS
+
+    for city in ["Paços de Ferreira", "Penafiel", "Paredes", "Ermesinde", "Alfena"]:
+        assert city in SUPPORTED_CITIES
+        assert city in CITY_CONFIG
+        assert city in BUY_CITY_PATHS
+        assert city in RENTAL_CITY_PATHS
+    assert PARISH_CITIES == {"Ermesinde", "Alfena"}

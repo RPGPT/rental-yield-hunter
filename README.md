@@ -15,7 +15,7 @@ Daily scraper for Porto-area apartment listings on imovirtual.com. Tracks buy li
 
 ## Cities
 
-Porto · Matosinhos · Vila Nova de Gaia · Maia
+Porto · Matosinhos · Vila Nova de Gaia · Maia · Paços de Ferreira · Penafiel · Paredes · Ermesinde · Alfena
 
 ## Structure
 
@@ -87,7 +87,7 @@ pytest
 ## GitHub Actions
 
 ### `scrape.yml` — daily at 07:00 UTC
-- **Matrix job** — each city gets its own runner, all four run in parallel.
+- **Matrix job** — each city gets its own runner, all cities run in parallel.
 - Buy and rental listings scraped separately.
 - On finish, a `summarise` job prints a Markdown table to the Actions run summary:
 

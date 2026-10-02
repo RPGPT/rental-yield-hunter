@@ -37,6 +37,11 @@ on:
           - "Matosinhos"
           - "Vila Nova de Gaia"
           - "Maia"
+          - "Paços de Ferreira"
+          - "Penafiel"
+          - "Paredes"
+          - "Ermesinde"
+          - "Alfena"
 
 jobs:
   # ── Migrate database ────────────────────────────────────────────────────────
@@ -67,7 +72,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        city: ${{ inputs.city != '' && fromJSON(format('["{0}"]', inputs.city)) || fromJSON('["Porto","Matosinhos","Vila Nova de Gaia","Maia"]') }}
+        city: ${{ inputs.city != '' && fromJSON(format('["{0}"]', inputs.city)) || fromJSON('["Porto","Matosinhos","Vila Nova de Gaia","Maia","Paços de Ferreira","Penafiel","Paredes","Ermesinde","Alfena"]') }}
 
 
     steps:
@@ -103,7 +108,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        city: ${{ inputs.city != '' && fromJSON(format('["{0}"]', inputs.city)) || fromJSON('["Porto","Matosinhos","Vila Nova de Gaia","Maia"]') }}
+        city: ${{ inputs.city != '' && fromJSON(format('["{0}"]', inputs.city)) || fromJSON('["Porto","Matosinhos","Vila Nova de Gaia","Maia","Paços de Ferreira","Penafiel","Paredes","Ermesinde","Alfena"]') }}
 
 
     steps:
