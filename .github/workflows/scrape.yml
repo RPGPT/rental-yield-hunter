@@ -12,9 +12,10 @@ on:
       source:
         description: "Source"
         required: true
-        default: "Imovirtual"
+        default: "Both"
         type: choice
         options:
+          - Both
           - Imovirtual
           - ERA
       scraping_type:
@@ -72,6 +73,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        source: ${{ (inputs.source == 'Imovirtual' && fromJSON('["imovirtual"]')) || (inputs.source == 'ERA' && fromJSON('["era"]')) || fromJSON('["imovirtual","era"]') }}
         city: ${{ inputs.city != '' && fromJSON(format('["{0}"]', inputs.city)) || fromJSON('["Porto","Matosinhos","Vila Nova de Gaia","Maia","Paços de Ferreira","Penafiel","Paredes","Ermesinde","Alfena"]') }}
 
 
@@ -87,14 +89,13 @@ jobs:
 
       - name: Scrape ${{ matrix.city }} (buy)
         run: |
-          SOURCE=$(echo "${{ inputs.source || 'Imovirtual' }}" | tr '[:upper:]' '[:lower:]')
-          python main.py --source "$SOURCE" --city "${{ matrix.city }}" --type buy
+          python main.py --source "${{ matrix.source }}" --city "${{ matrix.city }}" --type buy
 
       - name: Upload stats
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: scrape-stats-buy-${{ matrix.city }}
+          name: scrape-stats-buy-${{ matrix.source }}-${{ matrix.city }}
           path: stats-*.json
           if-no-files-found: warn
 
@@ -108,6 +109,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        source: ${{ (inputs.source == 'Imovirtual' && fromJSON('["imovirtual"]')) || (inputs.source == 'ERA' && fromJSON('["era"]')) || fromJSON('["imovirtual","era"]') }}
         city: ${{ inputs.city != '' && fromJSON(format('["{0}"]', inputs.city)) || fromJSON('["Porto","Matosinhos","Vila Nova de Gaia","Maia","Paços de Ferreira","Penafiel","Paredes","Ermesinde","Alfena"]') }}
 
 
@@ -123,14 +125,13 @@ jobs:
 
       - name: Scrape ${{ matrix.city }} (rent)
         run: |
-          SOURCE=$(echo "${{ inputs.source || 'Imovirtual' }}" | tr '[:upper:]' '[:lower:]')
-          python main.py --source "$SOURCE" --city "${{ matrix.city }}" --type rent
+          python main.py --source "${{ matrix.source }}" --city "${{ matrix.city }}" --type rent
 
       - name: Upload stats
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: scrape-stats-rent-${{ matrix.city }}
+          name: scrape-stats-rent-${{ matrix.source }}-${{ matrix.city }}
           path: stats-*.json
           if-no-files-found: warn
 
@@ -217,6 +218,15 @@ jobs:
               key=lambda r: r.get("city", ""),
           ) if stats_dir.exists() else []
 
+          def merge_by_city(rows):
+              merged = {}
+              for r in rows:
+                  m = merged.setdefault(r["city"], {"city": r["city"], "type": r.get("type"), "fetched": 0, "rented": 0, "price_changes": 0})
+                  m["fetched"] += r.get("fetched", 0)
+                  m["rented"] += r.get("rented", 0)
+                  m["price_changes"] += r.get("price_changes", 0)
+              return sorted(merged.values(), key=lambda m: m["city"])
+
           out = os.environ.get("GITHUB_STEP_SUMMARY", "/dev/stdout")
           with open(out, "w") as fh:
               if not all_rows:
@@ -269,8 +279,8 @@ jobs:
                   )
 
               fh.write("## 🏠 Scrape Summary\n\n")
-              write_buy_table(fh, [r for r in all_rows if r.get("type") == "buy"])
-              write_rent_table(fh, [r for r in all_rows if r.get("type") == "rent"])
+              write_buy_table(fh, merge_by_city(r for r in all_rows if r.get("type") == "buy"))
+              write_rent_table(fh, merge_by_city(r for r in all_rows if r.get("type") == "rent"))
 
               # ── Contract extraction summary ──
               contract_rows = [r for r in all_rows if r.get("type") == "contracts"]

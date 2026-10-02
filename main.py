@@ -68,6 +68,7 @@ def scrape_city(source: str, city: str, listing_type: str = "buy") -> dict:
 
     stats = {
         "city": city,
+        "source": source,
         "type": listing_type,
         "fetched": len(listings),
         "price_changes": n_price_changes,
@@ -94,7 +95,7 @@ def scrape_city(source: str, city: str, listing_type: str = "buy") -> dict:
         )
 
     slug = city.replace(" ", "-")
-    pathlib.Path(f"stats-{listing_type}-{slug}.json").write_text(json.dumps(stats))
+    pathlib.Path(f"stats-{listing_type}-{source}-{slug}.json").write_text(json.dumps(stats))
 
     return stats
 
