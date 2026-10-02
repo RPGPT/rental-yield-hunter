@@ -20,6 +20,19 @@ MAT_PERAFITA = "Perafita, Lavra e Santa Cruz do Bispo"
 
 # alias -> canonical neighborhood
 _NEIGHBORHOOD_ALIASES: dict[str, str] = {
+    # Paços de Ferreira / Penafiel
+    "Frazão Arreigada": "Frazão e Arreigada",
+    "Arreigada": "Frazão e Arreigada",
+    "Frazão": "Frazão e Arreigada",
+    "Sanfins Lamoso Codessos": "Sanfins, Lamoso e Codessos",
+    "Sanfins": "Sanfins, Lamoso e Codessos",
+    "Lamoso": "Sanfins, Lamoso e Codessos",
+    "Codessos": "Sanfins, Lamoso e Codessos",
+    "Guilhufe": "Guilhufe e Urrô",
+    "Urrô": "Guilhufe e Urrô",
+    "Lagares": "Lagares e Figueira",
+    "Luzim": "Luzim e Vila Cova",
+    "Vila Cova": "Luzim e Vila Cova",
     # Porto
     "Cedofeita, Ildefonso, Sé, Miragaia, Nicolau, Vitória": PORTO_CENTRO,
     "Cedofeita, Santo Ildefonso, Sé, Miragaia, São Nico": PORTO_CENTRO,
