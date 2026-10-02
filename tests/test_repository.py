@@ -465,7 +465,13 @@ class TestDeactivateMissingRentals:
             clean_rental_db,
             [
                 {**_RENTAL_BASE, "id": "r-porto", "url": "https://example.com/r-porto", "city": "Porto"},
-                {**_RENTAL_BASE, "id": "r-maia", "url": "https://example.com/r-maia", "city": "Maia"},
+                {
+                    **_RENTAL_BASE,
+                    "id": "r-maia",
+                    "url": "https://example.com/r-maia",
+                    "city": "Maia",
+                    "neighborhood": "Pedrouços",
+                },
             ],
         )
         deactivate_missing_rentals(clean_rental_db, "imovirtual", [], city="Porto")

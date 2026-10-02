@@ -15,6 +15,7 @@ from db.models import (
     RentalRawData,
     RentContractDetail,
 )
+from normalization import normalize_location
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +63,8 @@ def _upsert(
     for listing in listings:
         if "url" in listing:
             listing["url"] = _sanitize_url(listing["url"])
+        if "neighborhood" in listing:
+            listing["neighborhood"], listing["city"] = normalize_location(listing["neighborhood"], listing.get("city"))
 
     table = listing_model.__tablename__
     listing_columns = [c.name for c in listing_model.__table__.columns if c.name not in _EXCLUDE_FROM_INSERT]
