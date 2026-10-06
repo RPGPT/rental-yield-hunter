@@ -1,7 +1,7 @@
 from sqlalchemy import TIMESTAMP, BigInteger, Boolean, Column, Date, Float, ForeignKey, Integer, Numeric, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import declarative_base, relationship
-from sqlalchemy.sql import func
+from sqlalchemy.sql import func, text
 
 Base = declarative_base()
 
@@ -173,4 +173,15 @@ class AuditLog(Base):
     listing_id = Column(Text, nullable=False)
     user_id = Column(Text, nullable=False)
     user_email = Column(Text)
+    created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
+
+
+class SavedSearch(Base):
+    __tablename__ = "saved_searches"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column(Text, nullable=False, index=True)
+    name = Column(Text, nullable=False)
+    filters = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    last_checked_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
     created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
