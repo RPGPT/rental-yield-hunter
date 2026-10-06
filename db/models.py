@@ -1,4 +1,4 @@
-from sqlalchemy import TIMESTAMP, Boolean, Column, Date, Float, ForeignKey, Integer, Numeric, Text
+from sqlalchemy import TIMESTAMP, BigInteger, Boolean, Column, Date, Float, ForeignKey, Integer, Numeric, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql import func
@@ -163,3 +163,14 @@ class RentContractDetail(Base):
     updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
 
     listing = relationship("Listing", back_populates="contract_detail")
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_log"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    action = Column(Text, nullable=False)
+    listing_id = Column(Text, nullable=False)
+    user_id = Column(Text, nullable=False)
+    user_email = Column(Text)
+    created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
