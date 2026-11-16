@@ -168,19 +168,28 @@ class TestFetchDetails:
 
     @patch("scraper.imovirtual.fetcher.curl_requests")
     @patch("scraper.imovirtual.fetcher.time")
-    def test_skips_non_rented_listings(self, mock_time, mock_curl):
+    def test_fetches_non_rented_listings_to_discover_full_description_rent(self, mock_time, mock_curl):
         session = MagicMock()
         mock_curl.Session.return_value = session
+        detail = MagicMock(status_code=200)
+        detail.json.return_value = {
+            "pageProps": {
+                "ad": {
+                    "description": "Atualmente arrendado por 280 €/mês (contrato até 2032)",
+                }
+            }
+        }
+        session.get.side_effect = [MagicMock(status_code=200, text=BUILD_ID_HTML), detail]
 
-        fetch_details(
+        result = fetch_details(
             [
                 {"url": "https://www.imovirtual.com/pt/anuncio/a", "title": "", "is_rented": False},
-                {"url": "https://www.imovirtual.com/pt/anuncio/b", "title": "", "is_rented": False},
             ],
             CITY,
         )
 
-        assert session.get.call_count == 0
+        assert result[0]["is_rented"] is True
+        assert session.get.call_count == 2
 
     @patch("scraper.imovirtual.fetcher.curl_requests")
     @patch("scraper.imovirtual.fetcher.time")
@@ -202,18 +211,49 @@ class TestFetchDetails:
         )
 
         assert result[0]["description"] == "Apartamento arrendado"
+        assert result[0]["is_rented"] is True
+
+    @patch("scraper.imovirtual.fetcher.curl_requests")
+    @patch("scraper.imovirtual.fetcher.time")
+    def test_empty_detail_description_preserves_short_description(self, mock_time, mock_curl):
+        session = MagicMock()
+        mock_curl.Session.return_value = session
+        detail = MagicMock(status_code=200)
+        detail.json.return_value = {"pageProps": {"ad": {}}}
+        session.get.side_effect = [MagicMock(status_code=200, text=BUILD_ID_HTML), detail]
+
+        result = fetch_details(
+            [
+                {
+                    "url": "https://www.imovirtual.com/pt/anuncio/empty",
+                    "title": "",
+                    "description": "Apartamento arrendado por 280 euros",
+                    "is_rented": True,
+                }
+            ],
+            CITY,
+        )
+
+        assert result[0]["description"] == "Apartamento arrendado por 280 euros"
+        assert result[0]["is_rented"] is True
 
     def test_empty_listings(self):
         assert fetch_details([], CITY) == []
 
     @patch("scraper.imovirtual.fetcher.curl_requests")
     @patch("scraper.imovirtual.fetcher.time")
-    def test_only_rented_fetched_in_mixed_list(self, mock_time, mock_curl):
+    def test_fetches_all_listings_in_mixed_list(self, mock_time, mock_curl):
         session = MagicMock()
         mock_curl.Session.return_value = session
-        detail = MagicMock(status_code=200)
-        detail.json.return_value = {"pageProps": {"ad": {"description": "Arrendado vitalicio"}}}
-        session.get.side_effect = [MagicMock(status_code=200, text=BUILD_ID_HTML), detail]
+        rented_detail = MagicMock(status_code=200)
+        rented_detail.json.return_value = {"pageProps": {"ad": {"description": "Arrendado vitalicio"}}}
+        other_detail = MagicMock(status_code=200)
+        other_detail.json.return_value = {"pageProps": {"ad": {"description": "Apartamento disponível"}}}
+        session.get.side_effect = [
+            MagicMock(status_code=200, text=BUILD_ID_HTML),
+            rented_detail,
+            other_detail,
+        ]
 
         result = fetch_details(
             [
@@ -223,8 +263,9 @@ class TestFetchDetails:
             CITY,
         )
 
-        assert session.get.call_count == 2
+        assert session.get.call_count == 3
         assert result[0]["lifetime_rent"] is True
+        assert result[1]["is_rented"] is False
 
     def test_raises_on_unsupported_city(self):
         with pytest.raises(ValueError, match="Unsupported city"):

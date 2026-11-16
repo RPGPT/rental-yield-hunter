@@ -164,6 +164,12 @@ class TestExtractExpiry:
         iso, raw, conf = _extract_expiry(text)
         assert iso == "2028-03-31"
 
+    def test_year_only_expiry(self):
+        iso, raw, conf = _extract_expiry("contrato até 2032")
+        assert iso == "2032-12-31"
+        assert raw == "2032"
+        assert conf > 0
+
     def test_no_expiry(self):
         text = "Apartamento T2 renovado"
         iso, raw, conf = _extract_expiry(text)
@@ -203,6 +209,13 @@ class TestExtractRentAndExpiry:
         result = extract_rent_and_expiry(text)
         assert result["current_rent_amount"] == 950.0
         assert result["contract_expiry_date"] == "2028-03-31"
+
+    def test_listing_description_with_year_only_contract(self):
+        result = extract_rent_and_expiry(
+            "Atualmente arrendado por 280 €/mês (contrato até 2032)"
+        )
+        assert result["current_rent_amount"] == 280.0
+        assert result["contract_expiry_date"] == "2032-12-31"
 
     def test_english_exact_date(self):
         text = "Lease valid until 31 December 2026. Current rent: €1,200 per month."

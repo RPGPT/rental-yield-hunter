@@ -151,10 +151,10 @@ def fetch_details(listings: list[dict], city: str, city_paths: Optional[dict] = 
     if not listings:
         return listings
 
-    candidates = [listing for listing in listings if listing.get("is_rented")]
-    if not candidates:
+    if not listings:
         return listings
 
+    candidates = listings
     resolved_paths = city_paths if city_paths is not None else BUY_CITY_PATHS
 
     if city not in resolved_paths:
@@ -177,7 +177,7 @@ def fetch_details(listings: list[dict], city: str, city_paths: Optional[dict] = 
 
         detail = _fetch_detail(session, url, build_id)
         if detail:
-            description = detail["description"] or ""
+            description = detail["description"] or listing.get("description", "") or ""
             full_description = detail["full_description"] or ""
             # Store the primary description; check lifetime_rent against both
             # fields because sellers often put "vitalícia" in fullDescription only.
@@ -189,12 +189,14 @@ def fetch_details(listings: list[dict], city: str, city_paths: Optional[dict] = 
                 listing["_raw_json"]["fullDescription"] = full_description
             enriched += 1
         else:
-            listing["is_rented"] = is_rented(listing.get("title", ""))
+            listing["is_rented"] = is_rented(
+                f"{listing.get('title', '')} {listing.get('description', '')}"
+            )
 
         if (i + 1) % 20 == 0:
             logger.info("[%s] Detail %d/%d fetched", city, i + 1, len(candidates))
 
         time.sleep(REQUEST_DELAY)
 
-    logger.info("[%s] Enriched %d/%d rented candidates with full description", city, enriched, len(candidates))
+    logger.info("[%s] Enriched %d/%d listings with full description", city, enriched, len(candidates))
     return listings

@@ -319,23 +319,27 @@ def _extract_expiry(text: str) -> tuple[Optional[str], Optional[str], float]:
         chunk = re.sub(r"\s+(?:for|por|with)\s+[€\d].*$", "", chunk, flags=re.IGNORECASE).strip()
         # Trim anything after a 4-digit year (e.g. "2027 visitas suspensas" → "2027")
         chunk = re.sub(r"(\b\d{4}\b)\s+[a-z].*$", r"\1", chunk, flags=re.IGNORECASE).strip()
+        chunk = re.sub(r"[\s)\]]+$", "", chunk)
 
         if not chunk or len(chunk) < 4:
             continue
 
+        year_only = bool(re.fullmatch(r"\d{4}", chunk))
         parsed = dateparser.parse(
             chunk,
             languages=["pt", "en"],
             settings={
                 "PREFER_DATES_FROM": "future",
-                "REQUIRE_PARTS": ["month", "year"],
+                "REQUIRE_PARTS": ["year"] if year_only else ["month", "year"],
             },
         )
         if parsed and parsed.year >= 2024:
+            if year_only:
+                parsed = parsed.replace(month=12, day=31)
             # If the original text only has month+year (no day digit in chunk),
             # normalise to last day of month.
             has_day = bool(re.search(r"\b\d{1,2}\b", chunk) and re.search(r"\b\d{4}\b", chunk))
-            if not has_day:
+            if not year_only and not has_day:
                 day = _last_day_of_month(parsed.year, parsed.month)
                 parsed = parsed.replace(day=day)
             iso = parsed.date().isoformat()
