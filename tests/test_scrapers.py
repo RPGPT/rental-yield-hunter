@@ -59,6 +59,8 @@ class TestImovirtualBaseScraperRun:
     @patch("scraper.imovirtual.fetcher.curl_requests")
     @patch("scraper.imovirtual.fetcher.time")
     def test_buy_scraper_run_returns_listings(self, mock_time, mock_curl):
+        from scraper.imovirtual.fetcher import DETAIL_SCAN_BUCKETS, _detail_scan_bucket
+
         BUILD_ID_HTML = '<script id="__NEXT_DATA__" type="application/json">{"buildId":"b1"}</script>'
         session = MagicMock()
         mock_curl.Session.return_value = session
@@ -94,7 +96,11 @@ class TestImovirtualBaseScraperRun:
         session.get.side_effect = [MagicMock(status_code=200, text=BUILD_ID_HTML), page]
 
         scraper = ImovirtualBuyScraper("Porto")
-        listings = scraper.run()
+        with patch(
+            "scraper.imovirtual.fetcher._current_detail_scan_bucket",
+            return_value=(_detail_scan_bucket("88001") + 1) % DETAIL_SCAN_BUCKETS,
+        ):
+            listings = scraper.run()
 
         assert len(listings) == 1
         assert listings[0]["id"] == "88001"

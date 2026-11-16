@@ -8,6 +8,7 @@ from db.repository import (
     _sanitize_url,
     deactivate_missing,
     deactivate_missing_rentals,
+    get_rented_listing_ids,
     upsert_listings,
     upsert_rental_listings,
 )
@@ -61,6 +62,26 @@ class TestUpsertInsert:
         )
 
         assert clean_db.query(Listing).count() == 2
+
+
+class TestGetRentedListingIds:
+    def test_filters_by_city_and_source(self, clean_db):
+        upsert_listings(
+            clean_db,
+            [
+                {**_BASE, "id": "rented-imovirtual-porto", "is_rented": True},
+                {**_BASE, "id": "rented-era-porto", "source": "era", "is_rented": True},
+                {
+                    **_BASE,
+                    "id": "rented-imovirtual-gaia",
+                    "neighborhood": None,
+                    "city": "Vila Nova de Gaia",
+                    "is_rented": True,
+                },
+            ],
+        )
+
+        assert get_rented_listing_ids(clean_db, "Porto", "imovirtual") == {"rented-imovirtual-porto"}
 
 
 class TestUpsertUpdate:

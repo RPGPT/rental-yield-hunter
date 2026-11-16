@@ -1,6 +1,8 @@
+import hashlib
 import json
 import logging
 import time
+from datetime import datetime, timezone
 from typing import Optional
 
 from curl_cffi import requests as curl_requests
@@ -12,6 +14,16 @@ from scraper.utils import is_lifetime_rent, is_rented
 logger = logging.getLogger(__name__)
 
 SORT_PARAMS = "by=PRICE&direction=ASC"
+DETAIL_SCAN_BUCKETS = 7
+
+
+def _detail_scan_bucket(listing_id: str) -> int:
+    digest = hashlib.sha256(listing_id.encode("utf-8")).digest()
+    return int.from_bytes(digest[:4], "big") % DETAIL_SCAN_BUCKETS
+
+
+def _current_detail_scan_bucket() -> int:
+    return datetime.now(timezone.utc).date().toordinal() % DETAIL_SCAN_BUCKETS
 
 
 def extract_next_data(html: str) -> Optional[dict]:
@@ -147,14 +159,37 @@ def fetch(city: str, city_paths: Optional[dict] = None, max_price: Optional[int]
     return responses
 
 
-def fetch_details(listings: list[dict], city: str, city_paths: Optional[dict] = None) -> list[dict]:
+def fetch_details(
+    listings: list[dict],
+    city: str,
+    city_paths: Optional[dict] = None,
+    known_rented_ids: Optional[set[str]] = None,
+) -> list[dict]:
     if not listings:
         return listings
 
-    if not listings:
+    # Keep known rented listings fresh, and spread discovery scans across a week.
+    scan_bucket = _current_detail_scan_bucket()
+    known_rented_ids = known_rented_ids or set()
+    candidates = [
+        listing
+        for listing in listings
+        if listing.get("is_rented")
+        or listing.get("id") in known_rented_ids
+        or _detail_scan_bucket(str(listing.get("id", ""))) == scan_bucket
+    ]
+    for listing in candidates:
+        if listing.get("id") in known_rented_ids:
+            listing["is_rented"] = True
+    if not candidates:
+        logger.info(
+            "[%s] No full-description candidates in scan bucket %d/%d",
+            city,
+            scan_bucket + 1,
+            DETAIL_SCAN_BUCKETS,
+        )
         return listings
 
-    candidates = listings
     resolved_paths = city_paths if city_paths is not None else BUY_CITY_PATHS
 
     if city not in resolved_paths:
@@ -169,6 +204,14 @@ def fetch_details(listings: list[dict], city: str, city_paths: Optional[dict] = 
         logger.warning("Could not get buildId — skipping detail enrichment")
         return listings
     enriched = 0
+    logger.info(
+        "[%s] Checking full descriptions for %d/%d listings (bucket %d/%d)",
+        city,
+        len(candidates),
+        len(listings),
+        scan_bucket + 1,
+        DETAIL_SCAN_BUCKETS,
+    )
 
     for i, listing in enumerate(candidates):
         url = listing.get("url", "")
@@ -189,7 +232,7 @@ def fetch_details(listings: list[dict], city: str, city_paths: Optional[dict] = 
                 listing["_raw_json"]["fullDescription"] = full_description
             enriched += 1
         else:
-            listing["is_rented"] = is_rented(
+            listing["is_rented"] = listing.get("is_rented", False) or is_rented(
                 f"{listing.get('title', '')} {listing.get('description', '')}"
             )
 

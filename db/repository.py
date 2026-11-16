@@ -496,6 +496,21 @@ def get_rented_listings_for_extraction(db: Session, city: Optional[str] = None) 
     return [{"id": r.id, "url": r.url, "title": r.title or "", "description": r.description or ""} for r in q.all()]
 
 
+def get_rented_listing_ids(db: Session, city: str, source: str) -> set[str]:
+    """Return previously rented listing IDs for one source and city."""
+    rows = (
+        db.query(Listing.id)
+        .filter(
+            Listing.is_rented.is_(True),
+            Listing.is_deleted.is_(False),
+            Listing.city == city,
+            Listing.source == source,
+        )
+        .all()
+    )
+    return {row.id for row in rows}
+
+
 def upsert_contract_details(db: Session, details: list[dict]) -> int:
     """Bulk upsert extracted contract details.
 

@@ -14,6 +14,7 @@ class ImovirtualBaseScraper(Scraper):
 
     def __init__(self, city: str):
         self.city = city
+        self.known_rented_ids: set[str] = set()
 
     def fetch(self):
         return fetch(self.city, city_paths=self.CITY_PATHS, max_price=self.MAX_PRICE)
@@ -27,7 +28,12 @@ class ImovirtualBaseScraper(Scraper):
         )
 
     def enrich(self, listings):
-        return fetch_details(listings, self.city, city_paths=self.CITY_PATHS)
+        return fetch_details(
+            listings,
+            self.city,
+            city_paths=self.CITY_PATHS,
+            known_rented_ids=self.known_rented_ids,
+        )
 
 
 class ImovirtualBuyScraper(ImovirtualBaseScraper):

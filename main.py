@@ -11,6 +11,7 @@ from db.client import Session
 from db.repository import (
     deactivate_missing,
     deactivate_missing_rentals,
+    get_rented_listing_ids,
     get_rented_listings_for_extraction,
     refresh_rental_estimates,
     upsert_contract_details,
@@ -51,6 +52,12 @@ def scrape_city(source: str, city: str, listing_type: str = "buy") -> dict:
 
     logger.info("Scraping %s — %s [%s]...", source, city, listing_type)
     scraper = scraper_cls(city)
+    if isinstance(scraper, ImovirtualBuyScraper):
+        db = Session()
+        try:
+            scraper.known_rented_ids = get_rented_listing_ids(db, city, source)
+        finally:
+            db.close()
     listings = scraper.run()
 
     db = Session()

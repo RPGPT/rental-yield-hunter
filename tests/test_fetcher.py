@@ -169,6 +169,8 @@ class TestFetchDetails:
     @patch("scraper.imovirtual.fetcher.curl_requests")
     @patch("scraper.imovirtual.fetcher.time")
     def test_fetches_non_rented_listings_to_discover_full_description_rent(self, mock_time, mock_curl):
+        from scraper.imovirtual.fetcher import _detail_scan_bucket
+
         session = MagicMock()
         mock_curl.Session.return_value = session
         detail = MagicMock(status_code=200)
@@ -181,12 +183,21 @@ class TestFetchDetails:
         }
         session.get.side_effect = [MagicMock(status_code=200, text=BUILD_ID_HTML), detail]
 
-        result = fetch_details(
-            [
-                {"url": "https://www.imovirtual.com/pt/anuncio/a", "title": "", "is_rented": False},
-            ],
-            CITY,
-        )
+        with patch(
+            "scraper.imovirtual.fetcher._current_detail_scan_bucket",
+            return_value=_detail_scan_bucket("a"),
+        ):
+            result = fetch_details(
+                [
+                    {
+                        "id": "a",
+                        "url": "https://www.imovirtual.com/pt/anuncio/a",
+                        "title": "",
+                        "is_rented": False,
+                    },
+                ],
+                CITY,
+            )
 
         assert result[0]["is_rented"] is True
         assert session.get.call_count == 2
@@ -242,7 +253,13 @@ class TestFetchDetails:
 
     @patch("scraper.imovirtual.fetcher.curl_requests")
     @patch("scraper.imovirtual.fetcher.time")
-    def test_fetches_all_listings_in_mixed_list(self, mock_time, mock_curl):
+    def test_fetches_rented_and_rotating_unflagged_listings(self, mock_time, mock_curl):
+        from scraper.imovirtual.fetcher import _detail_scan_bucket
+
+        rented_id = "always-rented"
+        rotating_id = next(
+            str(i) for i in range(100) if _detail_scan_bucket(str(i)) != _detail_scan_bucket(rented_id)
+        )
         session = MagicMock()
         mock_curl.Session.return_value = session
         rented_detail = MagicMock(status_code=200)
@@ -255,17 +272,82 @@ class TestFetchDetails:
             other_detail,
         ]
 
-        result = fetch_details(
-            [
-                {"url": "https://www.imovirtual.com/pt/anuncio/a", "title": "", "is_rented": True},
-                {"url": "https://www.imovirtual.com/pt/anuncio/b", "title": "", "is_rented": False},
-            ],
-            CITY,
-        )
+        with patch(
+            "scraper.imovirtual.fetcher._current_detail_scan_bucket",
+            return_value=_detail_scan_bucket(rotating_id),
+        ):
+            result = fetch_details(
+                [
+                    {
+                        "id": rented_id,
+                        "url": "https://www.imovirtual.com/pt/anuncio/a",
+                        "title": "",
+                        "is_rented": True,
+                    },
+                    {
+                        "id": rotating_id,
+                        "url": "https://www.imovirtual.com/pt/anuncio/b",
+                        "title": "",
+                        "is_rented": False,
+                    },
+                ],
+                CITY,
+            )
 
         assert session.get.call_count == 3
         assert result[0]["lifetime_rent"] is True
         assert result[1]["is_rented"] is False
+
+    @patch("scraper.imovirtual.fetcher.curl_requests")
+    @patch("scraper.imovirtual.fetcher.time")
+    def test_always_refreshes_previously_rented_listings(self, mock_time, mock_curl):
+        from scraper.imovirtual.fetcher import DETAIL_SCAN_BUCKETS, _detail_scan_bucket
+
+        listing_id = "previously-rented"
+        detail = MagicMock(status_code=200)
+        detail.json.return_value = {"pageProps": {"ad": {"description": "Apartamento disponível"}}}
+        session = MagicMock()
+        mock_curl.Session.return_value = session
+        session.get.side_effect = [MagicMock(status_code=200, text=BUILD_ID_HTML), detail]
+
+        listing = {
+            "id": listing_id,
+            "url": "https://www.imovirtual.com/pt/anuncio/previous",
+            "title": "",
+            "is_rented": False,
+        }
+        with patch(
+            "scraper.imovirtual.fetcher._current_detail_scan_bucket",
+            return_value=(_detail_scan_bucket(listing_id) + 1) % DETAIL_SCAN_BUCKETS,
+        ):
+            result = fetch_details([listing], CITY, known_rented_ids={listing_id})
+
+        assert session.get.call_count == 2
+        assert result[0]["is_rented"] is False
+
+    @patch("scraper.imovirtual.fetcher.curl_requests")
+    def test_skips_unflagged_listings_outside_current_scan_bucket(self, mock_curl):
+        from scraper.imovirtual.fetcher import DETAIL_SCAN_BUCKETS, _detail_scan_bucket
+
+        listing_id = "not-in-todays-bucket"
+        scan_bucket = (_detail_scan_bucket(listing_id) + 1) % DETAIL_SCAN_BUCKETS
+        listings = [
+            {
+                "id": listing_id,
+                "url": "https://www.imovirtual.com/pt/anuncio/unscanned",
+                "title": "",
+                "is_rented": False,
+            }
+        ]
+
+        with patch(
+            "scraper.imovirtual.fetcher._current_detail_scan_bucket",
+            return_value=scan_bucket,
+        ):
+            result = fetch_details(listings, CITY)
+
+        assert result is listings
+        mock_curl.Session.assert_not_called()
 
     def test_raises_on_unsupported_city(self):
         with pytest.raises(ValueError, match="Unsupported city"):
