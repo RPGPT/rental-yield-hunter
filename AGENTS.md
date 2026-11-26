@@ -39,7 +39,7 @@ yieldhunter/
     repository/
       common.py                   chunks() (500 rows), sanitize_url()
       listings.py                 generic _upsert, _deactivate_missing, rented-ID lookup
-      estimates.py                unified 4-tier CTE waterfall (bulk + per-listing)
+      estimates.py                size-curved weighted-median estimator (area^0.30 + 60d recency)
       contracts.py                rented-listing + raw_data query, contract-detail upsert
   analysis/
     normalization.py              normalize_location(): freguesia aliases -> canonical names

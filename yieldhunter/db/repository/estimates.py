@@ -1,138 +1,199 @@
-"""Rental estimate & gross yield computation using a single unified 4-tier CTE waterfall.
+"""Non-linear rental estimate & gross yield computation (Size-Curved Weighted-Median Comps).
 
-Tiers (first tier with ``>= ESTIMATE_MIN_SAMPLES`` active rentals wins):
-1. ``typology + neighborhood + area ±15%`` -> confidence ``high``,   match_level ``neighborhood``
-2. ``typology + city         + area ±15%`` -> confidence ``medium``, match_level ``city``
-3. ``typology + neighborhood``             -> confidence ``medium``, match_level ``neighborhood_broad``
-4. ``typology + city``                     -> confidence ``low``,    match_level ``city_broad``
+Why non-linear?
+Rent per m² diminishes sharply with apartment size (in Porto data, ``rent ∝ area^0.30`` within
+the same neighborhood and typology). Multiplying ``AVG(rent_price_per_m2) * area`` linearly
+overestimates large apartments and is skewed by luxury outliers.
+
+Model (Method 1B):
+1. Pool active rentals plus rentals deactivated within the last ``ESTIMATE_INACTIVE_DAYS`` (60d),
+   down-weighted by ``ESTIMATE_INACTIVE_WEIGHT`` (0.60).
+2. Prefer ``(city, neighborhood, typology)`` when ``>= ESTIMATE_MIN_SAMPLES`` (3) comps exist
+   (staying in the same parish before falling back to city-wide comps); otherwise use ``(city, typology)``.
+3. Adjust each comparable's rent along the empirical diminishing-returns size curve:
+   ``adjusted_rent = comp_rent * (target_area / comp_area) ** ESTIMATE_AREA_EXPONENT``.
+4. Compute the **weighted median** of ``adjusted_rent``, weighting by parish match, Gaussian
+   log-area similarity (``ESTIMATE_AREA_SIGMA``), and recency.
 """
 
 from __future__ import annotations
 
 import logging
+import math
+from collections import defaultdict
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from yieldhunter.config import ESTIMATE_AREA_TOLERANCE, ESTIMATE_MIN_SAMPLES
+from yieldhunter.config import (
+    ESTIMATE_AREA_EXPONENT,
+    ESTIMATE_AREA_SIGMA,
+    ESTIMATE_AREA_TOLERANCE,
+    ESTIMATE_INACTIVE_DAYS,
+    ESTIMATE_INACTIVE_WEIGHT,
+    ESTIMATE_MIN_SAMPLES,
+    ESTIMATE_OTHER_PARISH_WEIGHT,
+)
 from yieldhunter.db.models import RentalEstimate
 from yieldhunter.db.repository.common import chunks
 
 logger = logging.getLogger(__name__)
 
-_ESTIMATE_CTE_SQL = """
-WITH inputs AS (
-    SELECT id, typology, neighborhood, city, area, price
-    FROM listings
-    WHERE area IS NOT NULL AND typology IS NOT NULL
-      {where_clause}
-),
-t1 AS (
-    SELECT i.id,
-           AVG(r.rent_price_per_m2)::numeric(10,2) AS avg_rpm,
-           COUNT(*)::int                            AS cnt
-    FROM inputs i
-    JOIN rental_listings r
-      ON r.typology     = i.typology
-     AND r.neighborhood = i.neighborhood
-     AND r.area         BETWEEN i.area * :lo AND i.area * :hi
-     AND r.rent_price_per_m2 IS NOT NULL
-     AND r.active = true
-    GROUP BY i.id
-    HAVING COUNT(*) >= :min_samples
-),
-t2 AS (
-    SELECT i.id,
-           AVG(r.rent_price_per_m2)::numeric(10,2) AS avg_rpm,
-           COUNT(*)::int                            AS cnt
-    FROM inputs i
-    JOIN rental_listings r
-      ON r.typology = i.typology
-     AND r.city     = i.city
-     AND r.area     BETWEEN i.area * :lo AND i.area * :hi
-     AND r.rent_price_per_m2 IS NOT NULL
-     AND r.active = true
-    GROUP BY i.id
-    HAVING COUNT(*) >= :min_samples
-),
-t3 AS (
-    SELECT i.id,
-           AVG(r.rent_price_per_m2)::numeric(10,2) AS avg_rpm,
-           COUNT(*)::int                            AS cnt
-    FROM inputs i
-    JOIN rental_listings r
-      ON r.typology     = i.typology
-     AND r.neighborhood = i.neighborhood
-     AND r.rent_price_per_m2 IS NOT NULL
-     AND r.active = true
-    GROUP BY i.id
-    HAVING COUNT(*) >= :min_samples
-),
-t4 AS (
-    SELECT i.id,
-           AVG(r.rent_price_per_m2)::numeric(10,2) AS avg_rpm,
-           COUNT(*)::int                            AS cnt
-    FROM inputs i
-    JOIN rental_listings r
-      ON r.typology = i.typology
-     AND r.city     = i.city
-     AND r.rent_price_per_m2 IS NOT NULL
-     AND r.active = true
-    GROUP BY i.id
-    HAVING COUNT(*) >= :min_samples
-)
-SELECT
-    i.id    AS listing_id,
-    i.area  AS area,
-    i.price AS price,
-    COALESCE(t1.avg_rpm, t2.avg_rpm, t3.avg_rpm, t4.avg_rpm)   AS avg_rpm,
-    COALESCE(t1.cnt,     t2.cnt,     t3.cnt,     t4.cnt,     0) AS sample_count,
-    CASE
-        WHEN t1.id IS NOT NULL THEN 'high'
-        WHEN t2.id IS NOT NULL THEN 'medium'
-        WHEN t3.id IS NOT NULL THEN 'medium'
-        WHEN t4.id IS NOT NULL THEN 'low'
-        ELSE 'none'
-    END AS confidence,
-    CASE
-        WHEN t1.id IS NOT NULL THEN 'neighborhood'
-        WHEN t2.id IS NOT NULL THEN 'city'
-        WHEN t3.id IS NOT NULL THEN 'neighborhood_broad'
-        WHEN t4.id IS NOT NULL THEN 'city_broad'
-        ELSE 'none'
-    END AS match_level
-FROM inputs i
-LEFT JOIN t1 ON t1.id = i.id
-LEFT JOIN t2 ON t2.id = i.id
-LEFT JOIN t3 ON t3.id = i.id
-LEFT JOIN t4 ON t4.id = i.id
-"""
+
+def _weighted_median(values_weights: list[tuple[float, float]]) -> float:
+    pairs = sorted(values_weights, key=lambda x: x[0])
+    total_w = sum(w for _, w in pairs)
+    if total_w <= 0:
+        return pairs[len(pairs) // 2][0]
+    half = total_w * 0.5
+    acc = 0.0
+    for val, w in pairs:
+        acc += w
+        if acc >= half:
+            return val
+    return pairs[-1][0]
 
 
-def _row_to_estimate(r) -> dict:
-    avg_rpm = float(r.avg_rpm) if r.avg_rpm is not None else None
+def _load_comparable_pools(
+    db: Session,
+    cities: Optional[set[str]] = None,
+) -> tuple[dict[tuple[str, Optional[str], str], list[dict]], dict[tuple[str, str], list[dict]]]:
+    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=ESTIMATE_INACTIVE_DAYS)
+    city_clause = "AND city = ANY(:cities)" if cities else ""
+    params: dict = {"cutoff": cutoff}
+    if cities:
+        params["cities"] = list(cities)
+
+    rows = db.execute(
+        text(
+            f"""
+            SELECT city, neighborhood, typology, area, rent_price_per_m2, active
+            FROM rental_listings
+            WHERE is_deleted = false
+              AND area IS NOT NULL AND area > 0
+              AND typology IS NOT NULL
+              AND city IS NOT NULL
+              AND rent_price_per_m2 IS NOT NULL AND rent_price_per_m2 > 0
+              AND (active = true OR (inactive_since IS NOT NULL AND inactive_since >= :cutoff))
+              {city_clause}
+            """
+        ),
+        params,
+    ).fetchall()
+
+    by_nt: dict[tuple[str, Optional[str], str], list[dict]] = defaultdict(list)
+    by_ct: dict[tuple[str, str], list[dict]] = defaultdict(list)
+    for r in rows:
+        comp = {
+            "neighborhood": r.neighborhood,
+            "area": float(r.area),
+            "rent": float(r.rent_price_per_m2) * float(r.area),
+            "recency_w": 1.0 if r.active else ESTIMATE_INACTIVE_WEIGHT,
+        }
+        by_nt[(r.city, r.neighborhood, r.typology)].append(comp)
+        by_ct[(r.city, r.typology)].append(comp)
+
+    return by_nt, by_ct
+
+
+def _estimate_one(
+    listing_id: str,
+    typology: Optional[str],
+    neighborhood: Optional[str],
+    city: Optional[str],
+    area: Optional[int],
+    price: Optional[int],
+    by_nt: dict[tuple[str, Optional[str], str], list[dict]],
+    by_ct: dict[tuple[str, str], list[dict]],
+) -> Optional[dict]:
+    if area is None or area <= 0 or typology is None:
+        return None
+
+    target_area = float(area)
+    lo = target_area * (1.0 - ESTIMATE_AREA_TOLERANCE)
+    hi = target_area * (1.0 + ESTIMATE_AREA_TOLERANCE)
+
+    nt = by_nt.get((city, neighborhood, typology), []) if city else []
+    ct = by_ct.get((city, typology), []) if city else []
+
+    if len(nt) >= ESTIMATE_MIN_SAMPLES:
+        pool = nt
+        close_count = sum(1 for c in nt if lo <= c["area"] <= hi)
+        if close_count >= ESTIMATE_MIN_SAMPLES:
+            confidence, match_level = "high", "neighborhood"
+        else:
+            confidence, match_level = "medium", "neighborhood_broad"
+    elif len(ct) >= ESTIMATE_MIN_SAMPLES:
+        pool = ct
+        close_count = sum(1 for c in ct if lo <= c["area"] <= hi)
+        if close_count >= ESTIMATE_MIN_SAMPLES:
+            confidence, match_level = "medium", "city"
+        else:
+            confidence, match_level = "low", "city_broad"
+    else:
+        return {
+            "listing_id": listing_id,
+            "estimated_rent": None,
+            "avg_rent_per_m2": None,
+            "sample_count": 0,
+            "confidence": "none",
+            "match_level": "none",
+            "rental_yield": None,
+        }
+
+    inv_two_sigma_sq = 0.5 / (ESTIMATE_AREA_SIGMA * ESTIMATE_AREA_SIGMA)
+    vw: list[tuple[float, float]] = []
+    for comp in pool:
+        loc_w = 1.0 if comp["neighborhood"] == neighborhood else ESTIMATE_OTHER_PARISH_WEIGHT
+        log_ratio = math.log(target_area / comp["area"])
+        area_w = math.exp(-inv_two_sigma_sq * log_ratio * log_ratio)
+        w = loc_w * area_w * comp["recency_w"]
+        adj_rent = comp["rent"] * ((target_area / comp["area"]) ** ESTIMATE_AREA_EXPONENT)
+        vw.append((adj_rent, w))
+
+    raw_est_rent = _weighted_median(vw)
+    estimated_rent = round(raw_est_rent)
+    avg_rpm = round(raw_est_rent / target_area, 2)
+
     return {
-        "listing_id": r.listing_id,
-        "estimated_rent": round(avg_rpm * r.area) if avg_rpm is not None else None,
+        "listing_id": listing_id,
+        "estimated_rent": estimated_rent,
         "avg_rent_per_m2": avg_rpm,
-        "sample_count": r.sample_count,
-        "confidence": r.confidence,
-        "match_level": r.match_level,
-        "rental_yield": round(avg_rpm * r.area * 12 / r.price, 4) if avg_rpm is not None and r.price else None,
+        "sample_count": len(pool),
+        "confidence": confidence,
+        "match_level": match_level,
+        "rental_yield": round(estimated_rent * 12 / price, 4) if price else None,
     }
 
 
 def _query_estimates(db: Session, where_clause: str, extra_params: dict) -> list[dict]:
-    params = {
-        "lo": 1 - ESTIMATE_AREA_TOLERANCE,
-        "hi": 1 + ESTIMATE_AREA_TOLERANCE,
-        "min_samples": ESTIMATE_MIN_SAMPLES,
-        **extra_params,
-    }
-    rows = db.execute(text(_ESTIMATE_CTE_SQL.format(where_clause=where_clause)), params).fetchall()
-    return [_row_to_estimate(r) for r in rows]
+    inputs = db.execute(
+        text(
+            f"""
+            SELECT id, typology, neighborhood, city, area, price
+            FROM listings
+            WHERE area IS NOT NULL AND area > 0 AND typology IS NOT NULL
+              {where_clause}
+            """
+        ),
+        extra_params,
+    ).fetchall()
+
+    if not inputs:
+        return []
+
+    cities = {r.city for r in inputs if r.city}
+    by_nt, by_ct = _load_comparable_pools(db, cities=cities if cities else None)
+
+    estimates: list[dict] = []
+    for r in inputs:
+        est = _estimate_one(r.id, r.typology, r.neighborhood, r.city, r.area, r.price, by_nt, by_ct)
+        if est is not None:
+            estimates.append(est)
+    return estimates
 
 
 def _upsert_estimates(db: Session, estimates: list[dict]) -> int:
@@ -158,13 +219,13 @@ def _upsert_estimates(db: Session, estimates: list[dict]) -> int:
 
 
 def compute_rental_estimate(db: Session, listing_id: str) -> Optional[dict]:
-    """Run the 4-tier waterfall for a single listing ID. Returns ``None`` if inputs are missing."""
+    """Run the size-curved weighted-median estimator for a single listing ID."""
     estimates = _query_estimates(db, "AND id = :id", {"id": listing_id})
     return estimates[0] if estimates else None
 
 
 def compute_and_upsert_rental_estimates(db: Session, listing_ids: list[str]) -> int:
-    """Compute and upsert rental estimates for *listing_ids* in a single bulk query."""
+    """Compute and upsert rental estimates for *listing_ids*."""
     if not listing_ids:
         return 0
     estimates = _query_estimates(db, "AND id = ANY(:ids)", {"ids": listing_ids})

@@ -299,3 +299,103 @@ class TestRefreshRentalEstimates:
         assert count == 1
         assert estimate_db.query(RentalEstimate).filter_by(listing_id="city-buy-1").first() is not None
         assert estimate_db.query(RentalEstimate).filter_by(listing_id="city-buy-2").first() is None
+
+
+class TestNonLinearSizeCurveAndRobustness:
+    def test_diminishing_rent_per_m2_across_sizes(self, estimate_db):
+        """A 50 m² unit must have higher estimated €/m² than 100 m² and 180 m², while total rent still rises."""
+        _insert_rentals(estimate_db, 5, area=80, rent_price_per_m2=15.0)
+        _insert_listing(estimate_db, id="small-50", area=50, price=180000)
+        _insert_listing(estimate_db, id="mid-100", area=100, price=260000)
+        _insert_listing(estimate_db, id="large-180", area=180, price=380000)
+
+        est_50 = compute_rental_estimate(estimate_db, "small-50")
+        est_100 = compute_rental_estimate(estimate_db, "mid-100")
+        est_180 = compute_rental_estimate(estimate_db, "large-180")
+
+        # Total monthly rent grows sub-linearly with size
+        assert est_50["estimated_rent"] < est_100["estimated_rent"] < est_180["estimated_rent"]
+        # Effective €/m² decreases sharply as size grows (non-proportional)
+        assert est_50["avg_rent_per_m2"] > est_100["avg_rent_per_m2"] > est_180["avg_rent_per_m2"]
+        # Linear scaling would have predicted 15 * 180 = 2700€; curve keeps 180 m² well under 1800€
+        assert est_180["estimated_rent"] < 1800
+
+    def test_weighted_median_resists_luxury_outlier(self, estimate_db):
+        _insert_listing(estimate_db, id="outlier-target", area=60, price=165000)
+        _insert_rentals(estimate_db, 4, id_prefix="norm", area=60, rent_price_per_m2=20.0)  # €1,200/mo
+        _insert_rentals(estimate_db, 1, id_prefix="lux", area=60, rent_price_per_m2=66.67)  # €4,000/mo outlier
+
+        est = compute_rental_estimate(estimate_db, "outlier-target")
+        assert est["estimated_rent"] == 1200
+
+    def test_recent_60d_inactive_rentals_used_while_stale_ignored(self, estimate_db):
+        from datetime import datetime, timedelta, timezone
+
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        _insert_listing(estimate_db, id="thin-city-buy", city="Alfena", neighborhood="Alfena", typology="T2", area=85)
+
+        # 3 rentals deactivated 20 days ago -> included
+        for i in range(3):
+            estimate_db.execute(
+                text(
+                    """
+                    INSERT INTO rental_listings
+                        (id, source, url, city, neighborhood, typology, area, price,
+                         rent_price_per_m2, active, inactive_since)
+                    VALUES (:id, 'imovirtual', 'https://example.com', 'Alfena', 'Alfena', 'T2',
+                            85, 850, 10.0, false, :ts)
+                    """
+                ),
+                {"id": f"recent-inact-{i}", "ts": now - timedelta(days=20)},
+            )
+        # 3 rentals deactivated 90 days ago with huge rent -> must be ignored
+        for i in range(3):
+            estimate_db.execute(
+                text(
+                    """
+                    INSERT INTO rental_listings
+                        (id, source, url, city, neighborhood, typology, area, price,
+                         rent_price_per_m2, active, inactive_since)
+                    VALUES (:id, 'imovirtual', 'https://example.com', 'Alfena', 'Alfena', 'T2',
+                            85, 3400, 40.0, false, :ts)
+                    """
+                ),
+                {"id": f"stale-inact-{i}", "ts": now - timedelta(days=90)},
+            )
+        estimate_db.commit()
+
+        est = compute_rental_estimate(estimate_db, "thin-city-buy")
+        assert est["confidence"] == "high"
+        assert est["sample_count"] == 3
+        assert est["estimated_rent"] == 850
+
+    def test_prefers_same_parish_curve_adjusted_over_other_parishes(self, estimate_db):
+        """When >=3 comps exist in the target parish (outside ±15%), stay in parish rather than city average."""
+        _insert_listing(estimate_db, id="foz-small", city="Porto", neighborhood="Foz", typology="T2", area=65)
+        # 3 larger T2s in Foz (100 m² @ 20 €/m² = €2,000)
+        _insert_rentals(
+            estimate_db,
+            3,
+            id_prefix="foz",
+            city="Porto",
+            neighborhood="Foz",
+            typology="T2",
+            area=100,
+            rent_price_per_m2=20.0,
+        )
+        # 5 cheap 65 m² T2s in Campanhã (€975)
+        _insert_rentals(
+            estimate_db,
+            5,
+            id_prefix="camp",
+            city="Porto",
+            neighborhood="Campanhã",
+            typology="T2",
+            area=65,
+            rent_price_per_m2=15.0,
+        )
+
+        est = compute_rental_estimate(estimate_db, "foz-small")
+        assert est["match_level"] == "neighborhood_broad"
+        assert est["confidence"] == "medium"
+        assert est["estimated_rent"] == round(2000 * ((65 / 100) ** 0.30))

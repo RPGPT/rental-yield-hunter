@@ -29,7 +29,7 @@ contract expiry, and estimates the market rent and gross yield of every buy list
 
 ```
 scrape buy (source × city) ─▶ scrape rent (source × city) ─┬─▶ extract contract details (stored descriptions)
-                                                           └─▶ refresh rental estimates  (4-tier CTE waterfall)
+                                                           └─▶ refresh rental estimates  (size-curved weighted median)
 ```
 
 1. **Scrape (`yieldhunter/sources/`).** Each scraper runs `fetch → parse → enrich` while reusing a single HTTP session and
@@ -42,8 +42,9 @@ scrape buy (source × city) ─▶ scrape rent (source × city) ─┬─▶ ext
    scans weekly (always refreshing known-rented IDs); ERA buy listings enrich every listing.
 4. **Contract extraction (`yieldhunter/pipeline/contracts.py`).** Deterministic regex + `dateparser` extraction over the
    already-stored full descriptions in Postgres (zero redundant HTTP calls).
-5. **Rental estimates (`yieldhunter/db/repository/estimates.py`).** Single 4-tier PostgreSQL CTE waterfall
-   (typology + neighborhood/city, ±15% area, ≥3 samples) computing estimated monthly rent, confidence, and gross yield.
+5. **Rental estimates (`yieldhunter/db/repository/estimates.py`).** Size-curved weighted-median comparables
+   (`adjusted_rent = comp_rent × (target_area / comp_area)^0.30`) over active + 60-day recently-rented listings,
+   accounting for diminishing €/m² on larger apartments and resisting luxury outliers.
 
 ## Structure
 

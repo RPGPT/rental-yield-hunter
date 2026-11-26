@@ -74,21 +74,23 @@ deactivating existing listings.
   `WHERE is_deleted = false`, inserts price history, and upserts `raw_data` (skipping deleted rows).
 - **`_deactivate_missing`**: `UPDATE … SET active=false, inactive_since=NOW() WHERE source=:source AND active AND NOT is_deleted AND id != ALL(:ids) [AND city=:city]`.
 
-### `estimates.py` — Unified 4-tier CTE waterfall
+### `estimates.py` — Size-curved weighted-median comparables (`area^0.30` + 60-day recency)
+Rent per m² is strongly non-linear with apartment size (`rent ∝ area^0.30` within the same parish and typology).
 Both `refresh_rental_estimates(db, city=...)` and `compute_rental_estimate(db, listing_id)` /
-`compute_and_upsert_rental_estimates(db, listing_ids)` share a single `_ESTIMATE_CTE_SQL` query (`MIN_SAMPLES = 3`,
-`AREA_TOLERANCE = ±15%`):
+`compute_and_upsert_rental_estimates(db, listing_ids)` use the same estimator:
 
-| Tier | Match | `confidence` | `match_level` |
-|---|---|---|---|
-| 1 | typology + neighborhood + area ±15% | high | neighborhood |
-| 2 | typology + city + area ±15% | medium | city |
-| 3 | typology + neighborhood | medium | neighborhood_broad |
-| 4 | typology + city | low | city_broad |
-| — | none | none | none |
-
-`estimated_rent = round(avg_rpm * area)`, `rental_yield = round(avg_rpm * area * 12 / price, 4)`. Comparables pool ERA
-and Imovirtual active rentals together.
+1. **Comparable pool:** active rentals plus rentals deactivated within the last `ESTIMATE_INACTIVE_DAYS` (60 days,
+   weighted at `0.60×` vs `1.0×` for active), pooling ERA and Imovirtual together.
+2. **Location priority (`MIN_SAMPLES = 3`):**
+   - `≥3` comps in `(city, neighborhood, typology)` → stays in the parish (`high` / `neighborhood` when `≥3` are within
+     `±15%` area, otherwise `medium` / `neighborhood_broad`).
+   - Otherwise `≥3` comps in `(city, typology)` → city pool (`medium` / `city` when `≥3` are within `±15%` area,
+     otherwise `low` / `city_broad`).
+   - Otherwise → `none`.
+3. **Curve adjustment & weighted median:** each comparable's rent is size-adjusted via
+   `comp_rent × (target_area / comp_area)^0.30` and aggregated via **weighted median** (weighted by parish match,
+   Gaussian log-area similarity `σ = 0.22`, and recency) so luxury outliers cannot skew yields.
+4. `avg_rent_per_m2 = round(raw_est_rent / area, 2)`, `rental_yield = round(estimated_rent * 12 / price, 4)`.
 
 ### `contracts.py` & `pipeline/contracts.py` — DB-first contract extraction
 `get_rented_listings_for_extraction` outer-joins `listings` with `raw_data` to retrieve `title`, `description`, and
