@@ -257,9 +257,7 @@ class TestFetchDetails:
         from scraper.imovirtual.fetcher import _detail_scan_bucket
 
         rented_id = "always-rented"
-        rotating_id = next(
-            str(i) for i in range(100) if _detail_scan_bucket(str(i)) != _detail_scan_bucket(rented_id)
-        )
+        rotating_id = next(str(i) for i in range(100) if _detail_scan_bucket(str(i)) != _detail_scan_bucket(rented_id))
         session = MagicMock()
         mock_curl.Session.return_value = session
         rented_detail = MagicMock(status_code=200)
