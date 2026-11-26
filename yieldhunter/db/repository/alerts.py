@@ -76,11 +76,13 @@ def find_pending_saved_search_alerts(db: Session) -> list[dict]:
                 l.neighborhood, l.city, l.typology, l.has_garage,
                 l.is_rented, l.lifetime_rent, l.first_seen,
                 re.estimated_rent, re.rental_yield,
+                rcd.current_rent,
                 lc.cluster_size, lc.price_spread, lc.is_cheapest,
                 rd.previous_price AS drop_previous_price,
                 rd.captured_at AS drop_captured_at
             FROM listings l
             LEFT JOIN rental_estimates re ON re.listing_id = l.id
+            LEFT JOIN rent_contract_details rcd ON rcd.listing_id = l.id
             LEFT JOIN listing_clusters lc ON lc.listing_id = l.id
             LEFT JOIN recent_drops rd ON rd.listing_id = l.id
             WHERE l.active = true AND l.is_deleted = false

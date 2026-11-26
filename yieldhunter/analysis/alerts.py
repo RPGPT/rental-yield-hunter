@@ -1,4 +1,10 @@
-"""Saved-search filter evaluation and deal-alert message formatting."""
+"""Saved-search filter evaluation and deal-alert message formatting.
+
+Aligned with ``rental-yield-hunter-ui``'s ``FilterStateService.toQueryParams()`` JSONB schema
+(``price_min``, ``price_max``, ``area_min``, ``area_max``, comma-separated ``typology``/``city``/
+``neighborhood``/``source``, ``rental_yield_min``, string booleans ``"true"``/``"false"``,
+``has_contract_details``, ``deduplicate``, ``mode``) as well as camelCase/array aliases.
+"""
 
 from __future__ import annotations
 
@@ -16,10 +22,23 @@ def _as_set(val: Any) -> set[str] | None:
     if val is None:
         return None
     if isinstance(val, str):
-        return {val.casefold()} if val.strip() else None
+        parts = {p.strip().casefold() for p in val.split(",") if p.strip()}
+        return parts or None
     if isinstance(val, (list, tuple, set)):
-        items = {str(x).casefold() for x in val if x is not None and str(x).strip()}
+        items = {p.strip().casefold() for x in val if x is not None for p in str(x).split(",") if p.strip()}
         return items or None
+    return None
+
+
+def _as_bool(val: Any) -> bool | None:
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, str):
+        low = val.strip().lower()
+        if low == "true":
+            return True
+        if low == "false":
+            return False
     return None
 
 
@@ -27,7 +46,6 @@ def _normalize_fraction(val: Any) -> float | None:
     if val is None:
         return None
     f = float(val)
-    # Accept both fraction (0.065) and percentage (6.5)
     return f / 100.0 if f > 1.0 else f
 
 
@@ -36,54 +54,73 @@ def matches_saved_search(listing: dict, filters: dict) -> bool:
     if not filters:
         return True
 
-    cities = _as_set(_first_key(filters, "cities", "city"))
+    if filters.get("mode") == "rent":
+        return False
+
+    cities = _as_set(_first_key(filters, "city", "cities"))
     if cities and (listing.get("city") or "").casefold() not in cities:
         return False
 
-    parishes = _as_set(_first_key(filters, "neighborhoods", "neighborhood"))
+    parishes = _as_set(_first_key(filters, "neighborhood", "neighborhoods"))
     if parishes and (listing.get("neighborhood") or "").casefold() not in parishes:
         return False
 
-    sources = _as_set(_first_key(filters, "sources", "source"))
+    sources = _as_set(_first_key(filters, "source", "sources"))
     if sources and (listing.get("source") or "").casefold() not in sources:
         return False
 
-    typologies = _as_set(_first_key(filters, "typologies", "typology"))
+    typologies = _as_set(_first_key(filters, "typology", "typologies"))
     if typologies and (listing.get("typology") or "").casefold() not in typologies:
         return False
 
     price = listing.get("price")
-    min_price = _first_key(filters, "min_price", "minPrice")
+    min_price = _first_key(filters, "price_min", "min_price", "minPrice")
     if min_price is not None and (price is None or price < float(min_price)):
         return False
-    max_price = _first_key(filters, "max_price", "maxPrice")
+    max_price = _first_key(filters, "price_max", "max_price", "maxPrice")
     if max_price is not None and (price is None or price > float(max_price)):
         return False
 
     area = listing.get("area")
-    min_area = _first_key(filters, "min_area", "minArea")
+    min_area = _first_key(filters, "area_min", "min_area", "minArea")
     if min_area is not None and (area is None or area < float(min_area)):
         return False
-    max_area = _first_key(filters, "max_area", "maxArea")
+    max_area = _first_key(filters, "area_max", "max_area", "maxArea")
     if max_area is not None and (area is None or area > float(max_area)):
         return False
 
-    min_yield = _normalize_fraction(_first_key(filters, "min_yield", "minYield"))
+    min_yield = _normalize_fraction(_first_key(filters, "rental_yield_min", "min_yield", "minYield"))
     if min_yield is not None:
         ry = listing.get("rental_yield")
         if ry is None or float(ry) < min_yield:
             return False
 
-    is_rented_filter = _first_key(filters, "is_rented", "isRented")
-    if isinstance(is_rented_filter, bool) and bool(listing.get("is_rented")) != is_rented_filter:
+    is_rented_filter = _as_bool(_first_key(filters, "is_rented", "isRented"))
+    if is_rented_filter is not None and bool(listing.get("is_rented")) != is_rented_filter:
         return False
 
-    excl_lifetime = _first_key(filters, "exclude_lifetime_rent", "excludeLifetimeRent")
+    lifetime_filter = _as_bool(_first_key(filters, "lifetime_rent", "lifetimeRent"))
+    if lifetime_filter is not None and bool(listing.get("lifetime_rent")) != lifetime_filter:
+        return False
+
+    excl_lifetime = _as_bool(_first_key(filters, "exclude_lifetime_rent", "excludeLifetimeRent"))
     if excl_lifetime and listing.get("lifetime_rent"):
         return False
 
-    has_garage = _first_key(filters, "has_garage", "hasGarage")
-    if isinstance(has_garage, bool) and bool(listing.get("has_garage")) != has_garage:
+    has_contract = _as_bool(_first_key(filters, "has_contract_details", "hasContractDetails"))
+    if has_contract is True:
+        current_rent = _first_key(listing, "current_rent", "rent_current_rent")
+        if not listing.get("is_rented") or listing.get("lifetime_rent") or current_rent is None:
+            return False
+
+    has_garage = _as_bool(_first_key(filters, "has_garage", "hasGarage"))
+    if has_garage is not None and bool(listing.get("has_garage")) != has_garage:
+        return False
+
+    price_change = _first_key(filters, "price_change", "priceChange")
+    if price_change == "reduced" and (listing.get("price_drop_amount") or 0) <= 0:
+        return False
+    if price_change == "increased" and (listing.get("price_drop_amount") or 0) >= 0:
         return False
 
     min_drop_pct = _normalize_fraction(_first_key(filters, "min_price_drop_pct", "minPriceDropPct"))
@@ -92,7 +129,7 @@ def matches_saved_search(listing: dict, filters: dict) -> bool:
         if dp is None or float(dp) < min_drop_pct:
             return False
 
-    only_cheapest = _first_key(filters, "only_cheapest_in_cluster", "onlyCheapestInCluster")
+    only_cheapest = _as_bool(_first_key(filters, "deduplicate", "only_cheapest_in_cluster", "onlyCheapestInCluster"))
     if only_cheapest and listing.get("is_cheapest") is False:
         return False
 

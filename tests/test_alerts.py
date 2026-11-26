@@ -58,6 +58,47 @@ class TestMatchesSavedSearch:
         assert not matches_saved_search(listing, {"minYield": 7.5})
         assert not matches_saved_search(listing, {"cities": ["Matosinhos"]})
 
+    def test_matches_exact_ui_saved_search_query_params(self):
+        listing = {
+            "city": "Porto",
+            "neighborhood": "Paranhos",
+            "source": "casasapo",
+            "typology": "T2",
+            "price": 210_000,
+            "area": 82,
+            "rental_yield": 0.068,
+            "is_rented": True,
+            "lifetime_rent": False,
+            "rent_current_rent": 950,
+            "price_drop_amount": 15_000,
+            "price_drop_pct": 0.066,
+            "is_cheapest": True,
+        }
+        ui_filters = {
+            "mode": "buy",
+            "city": "Porto,Maia",
+            "neighborhood": "Paranhos,Bonfim",
+            "typology": "T2,T3",
+            "source": "imovirtual,casasapo",
+            "price_min": "150000",
+            "price_max": "250000",
+            "area_min": "70",
+            "area_max": "110",
+            "rental_yield_min": "0.06",
+            "is_rented": "true",
+            "lifetime_rent": "false",
+            "has_contract_details": "true",
+            "price_change": "reduced",
+            "deduplicate": "true",
+        }
+        assert matches_saved_search(listing, ui_filters)
+        # Rent-mode saved searches never match buy-listing deal alerts
+        assert not matches_saved_search(listing, {**ui_filters, "mode": "rent"})
+        # Non-cheapest sibling excluded when deduplicate="true"
+        assert not matches_saved_search({**listing, "is_cheapest": False}, ui_filters)
+        # Missing contract details excluded when has_contract_details="true"
+        assert not matches_saved_search({**listing, "rent_current_rent": None}, ui_filters)
+
     def test_digest_formatting(self):
         md = format_alert_digest_markdown(
             "High Yield Porto",
