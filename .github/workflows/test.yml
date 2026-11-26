@@ -42,5 +42,5 @@ jobs:
 
       - run: python -m alembic upgrade head
 
-      - run: python -m pytest tests/ -v --ignore=tests/test_integration.py
+      - run: python -m pytest tests/ -v
 

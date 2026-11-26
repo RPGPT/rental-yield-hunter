@@ -9,3 +9,4 @@ ruff
 pre-commit
 word2number
 dateparser
+freezegun

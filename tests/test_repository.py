@@ -2,8 +2,15 @@ from datetime import datetime, timezone
 
 from sqlalchemy import text
 
-from db.models import Listing, ListingPriceHistory, RawData, RentalListing, RentalListingPriceHistory, RentalRawData
-from db.repository import (
+from yieldhunter.db.models import (
+    Listing,
+    ListingPriceHistory,
+    RawData,
+    RentalListing,
+    RentalListingPriceHistory,
+    RentalRawData,
+)
+from yieldhunter.db.repository import (
     _get_existing,
     _sanitize_url,
     deactivate_missing,
@@ -514,10 +521,10 @@ class TestUpsertWithoutUrl:
         # We use a mock session so the DB NOT NULL constraint is irrelevant.
         from unittest.mock import MagicMock, patch
 
-        from db import repository
+        from yieldhunter.db.repository import listings as repository
 
         sanitized = []
-        original = repository._sanitize_url
+        original = repository.sanitize_url
 
         def spy(url):
             sanitized.append(url)
@@ -529,7 +536,7 @@ class TestUpsertWithoutUrl:
         no_url = {k: v for k, v in _BASE.items() if k != "url"}
         no_url["id"] = "no-url-id"
 
-        with patch.object(repository, "_sanitize_url", side_effect=spy):
+        with patch.object(repository, "sanitize_url", side_effect=spy):
             repository._upsert(
                 mock_db,
                 [

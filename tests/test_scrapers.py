@@ -2,10 +2,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import config
-from scraper.base import Scraper
-from scraper.imovirtual import ImovirtualBuyScraper, ImovirtualRentalScraper, ImovirtualScraper
-from scraper.imovirtual.constants import BUY_CITY_PATHS, RENTAL_CITY_PATHS
+from yieldhunter import config
+from yieldhunter.sources.base import Scraper
+from yieldhunter.sources.imovirtual import ImovirtualBuyScraper, ImovirtualRentalScraper, ImovirtualScraper
+from yieldhunter.sources.imovirtual.constants import BUY_CITY_PATHS, RENTAL_CITY_PATHS
 
 
 class TestImovirtualBuyScraper:
@@ -56,10 +56,10 @@ class TestImovirtualScraperAlias:
 
 
 class TestImovirtualBaseScraperRun:
-    @patch("scraper.imovirtual.fetcher.curl_requests")
-    @patch("scraper.imovirtual.fetcher.time")
+    @patch("yieldhunter.sources.imovirtual.client.curl_requests")
+    @patch("yieldhunter.sources.imovirtual.client.time")
     def test_buy_scraper_run_returns_listings(self, mock_time, mock_curl):
-        from scraper.imovirtual.fetcher import DETAIL_SCAN_BUCKETS, _detail_scan_bucket
+        from yieldhunter.sources.imovirtual.client import DETAIL_SCAN_BUCKETS, _detail_scan_bucket
 
         BUILD_ID_HTML = '<script id="__NEXT_DATA__" type="application/json">{"buildId":"b1"}</script>'
         session = MagicMock()
@@ -97,7 +97,7 @@ class TestImovirtualBaseScraperRun:
 
         scraper = ImovirtualBuyScraper("Porto")
         with patch(
-            "scraper.imovirtual.fetcher._current_detail_scan_bucket",
+            "yieldhunter.sources.imovirtual.client._current_detail_scan_bucket",
             return_value=(_detail_scan_bucket("88001") + 1) % DETAIL_SCAN_BUCKETS,
         ):
             listings = scraper.run()
@@ -106,8 +106,8 @@ class TestImovirtualBaseScraperRun:
         assert listings[0]["id"] == "88001"
         assert listings[0]["price"] == 200000
 
-    @patch("scraper.imovirtual.fetcher.curl_requests")
-    @patch("scraper.imovirtual.fetcher.time")
+    @patch("yieldhunter.sources.imovirtual.client.curl_requests")
+    @patch("yieldhunter.sources.imovirtual.client.time")
     def test_rental_scraper_fetches_from_arrendar_path(self, mock_time, mock_curl):
         session = MagicMock()
         mock_curl.Session.return_value = session
@@ -119,8 +119,8 @@ class TestImovirtualBaseScraperRun:
         first_url = session.get.call_args_list[0][0][0]
         assert "arrendar" in first_url
 
-    @patch("scraper.imovirtual.fetcher.curl_requests")
-    @patch("scraper.imovirtual.fetcher.time")
+    @patch("yieldhunter.sources.imovirtual.client.curl_requests")
+    @patch("yieldhunter.sources.imovirtual.client.time")
     def test_rental_scraper_applies_rental_price_ceiling(self, mock_time, mock_curl):
         BUILD_ID_HTML = '<script id="__NEXT_DATA__" type="application/json">{"buildId":"b1"}</script>'
         session = MagicMock()
@@ -146,16 +146,16 @@ class TestImovirtualBaseScraperRun:
         assert session.get.call_count == 2
 
     def test_rental_scraper_raises_for_unsupported_city(self):
-        from scraper.imovirtual.fetcher import fetch
+        from yieldhunter.sources.imovirtual.client import fetch
 
         with pytest.raises(ValueError, match="Unsupported city"):
             fetch("Lisboa", city_paths=RENTAL_CITY_PATHS)
 
 
 def test_new_cities_configured_for_both_sources():
-    from config import PARISH_CITIES, SUPPORTED_CITIES
-    from scraper.era.constants import CITY_CONFIG
-    from scraper.imovirtual.constants import BUY_CITY_PATHS, RENTAL_CITY_PATHS
+    from yieldhunter.config import PARISH_CITIES, SUPPORTED_CITIES
+    from yieldhunter.sources.era.constants import CITY_CONFIG
+    from yieldhunter.sources.imovirtual.constants import BUY_CITY_PATHS, RENTAL_CITY_PATHS
 
     for city in ["Paços de Ferreira", "Penafiel", "Paredes", "Ermesinde", "Alfena"]:
         assert city in SUPPORTED_CITIES

@@ -1,6 +1,6 @@
 """Tests for the rental contract detail extractor."""
 
-from scraper.contract_extractor import (
+from yieldhunter.analysis.contracts import (
     _extract_expiry,
     _extract_rent,
     _find_euro_amounts,

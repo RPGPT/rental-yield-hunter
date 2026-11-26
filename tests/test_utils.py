@@ -1,6 +1,6 @@
 import pytest
 
-from scraper.utils import is_rented
+from yieldhunter.analysis.rented import is_rented
 
 
 class TestIsRented:

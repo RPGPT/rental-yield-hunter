@@ -1,4 +1,5 @@
-from scraper.imovirtual.parser import (
+from tests.conftest import make_item, make_response
+from yieldhunter.sources.imovirtual.parser import (
     build_location,
     build_url,
     extract_id,
@@ -7,7 +8,6 @@ from scraper.imovirtual.parser import (
     rooms_to_typology,
     typology_from_title,
 )
-from tests.conftest import make_item, make_response
 
 
 class TestBuildUrl:
@@ -287,7 +287,7 @@ class TestCustomPriceRange:
         assert result[0]["id"] == "1"
 
     def test_parse_listing_defaults_to_config_prices(self):
-        from config import MAX_PRICE, MIN_PRICE
+        from yieldhunter.config import MAX_PRICE, MIN_PRICE
 
         assert parse_listing(make_item(totalPrice={"value": MIN_PRICE})) is not None
         assert parse_listing(make_item(totalPrice={"value": MIN_PRICE - 1})) is None

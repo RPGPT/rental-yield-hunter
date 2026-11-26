@@ -1,0 +1,247 @@
+"""Imovirtual Next.js ``_next/data`` HTTP client and weekly detail-scan rotation."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import logging
+import time
+from datetime import datetime, timezone
+from typing import Optional
+
+from curl_cffi import requests as curl_requests
+
+from yieldhunter.analysis.rented import is_lifetime_rent, is_rented
+from yieldhunter.config import MAX_PRICE, REQUEST_DELAY
+from yieldhunter.sources.http import ACCEPT_LANGUAGE, HTML_HEADERS
+from yieldhunter.sources.imovirtual.constants import BASE_URL, BUY_CITY_PATHS
+
+logger = logging.getLogger(__name__)
+
+SORT_PARAMS = "by=PRICE&direction=ASC"
+DETAIL_SCAN_BUCKETS = 7
+
+
+def _detail_scan_bucket(listing_id: str) -> int:
+    digest = hashlib.sha256(listing_id.encode("utf-8")).digest()
+    return int.from_bytes(digest[:4], "big") % DETAIL_SCAN_BUCKETS
+
+
+def _current_detail_scan_bucket() -> int:
+    return datetime.now(timezone.utc).date().toordinal() % DETAIL_SCAN_BUCKETS
+
+
+def extract_next_data(html: str) -> Optional[dict]:
+    marker = 'id="__NEXT_DATA__"'
+    start = html.find(marker)
+    if start == -1:
+        return None
+    json_start = html.find(">", start) + 1
+    json_end = html.find("</script>", json_start)
+    return json.loads(html[json_start:json_end])
+
+
+def min_price(items: list) -> Optional[int]:
+    for item in items:
+        value = (item.get("totalPrice") or {}).get("value")
+        if value is not None:
+            return int(value)
+    return None
+
+
+def _nextjs_json_headers(referer: str) -> dict[str, str]:
+    return {
+        "Accept": "application/json",
+        "Accept-Language": ACCEPT_LANGUAGE,
+        "Referer": referer,
+        "x-nextjs-data": "1",
+    }
+
+
+def _get_build_id(session, search_url: str) -> Optional[str]:
+    resp = session.get(search_url, headers=HTML_HEADERS)
+    if resp.status_code != 200:
+        logger.error("HTML page returned status %d", resp.status_code)
+        return None
+
+    data = extract_next_data(resp.text)
+    build_id = data.get("buildId") if data else None
+    if not build_id:
+        logger.error("Could not extract buildId")
+        return None
+
+    logger.info("buildId: %s", build_id)
+    return build_id
+
+
+def _fetch_page(session, build_id: str, api_path: str, search_url: str, page: int) -> Optional[dict]:
+    url = f"{BASE_URL}_next/data/{build_id}/{api_path}?page={page}&{SORT_PARAMS}"
+    resp = session.get(url, headers=_nextjs_json_headers(search_url))
+    if resp.status_code != 200:
+        logger.error("Page %d returned status %d", page, resp.status_code)
+        return None
+    return resp.json().get("pageProps", {}).get("data", {}).get("searchAds")
+
+
+def _fetch_detail(session, url: str, build_id: str) -> Optional[dict]:
+    """Return ``{"description": ..., "full_description": ...}`` for one listing URL, or ``None``."""
+    path = url.replace(BASE_URL, "").lstrip("/")
+    api_url = f"{BASE_URL}_next/data/{build_id}/{path}.json"
+    resp = session.get(api_url, headers=_nextjs_json_headers(url))
+    if resp.status_code == 200:
+        ad = resp.json().get("pageProps", {}).get("ad", {})
+        return {
+            "description": ad.get("description"),
+            "full_description": ad.get("fullDescription"),
+        }
+    return None
+
+
+def fetch_with_context(
+    city: str,
+    city_paths: Optional[dict] = None,
+    max_price: Optional[int] = None,
+) -> tuple[list[dict], bool, object, Optional[str]]:
+    """Fetch search pages and return ``(responses, complete, session, build_id)``."""
+    resolved_paths = city_paths if city_paths is not None else BUY_CITY_PATHS
+    resolved_max_price = max_price if max_price is not None else MAX_PRICE
+
+    if city not in resolved_paths:
+        raise ValueError(f"Unsupported city: {city!r}. Supported: {list(resolved_paths)}")
+
+    search_path, api_path = resolved_paths[city]
+    search_url = BASE_URL + search_path
+
+    session = curl_requests.Session(impersonate="chrome")
+    build_id = _get_build_id(session, search_url)
+    if not build_id:
+        return [], False, session, None
+
+    responses: list[dict] = []
+    page = 0
+    complete = True
+
+    while True:
+        page += 1
+        search_data = _fetch_page(session, build_id, api_path, search_url, page)
+        if not search_data:
+            complete = False
+            break
+
+        items = search_data.get("items", [])
+        pagination = search_data.get("pagination", {})
+        total_pages = pagination.get("totalPages", 0)
+        total_items = pagination.get("totalItems", 0)
+        cheapest = min_price(items)
+
+        responses.append(search_data)
+        logger.info(
+            "[%s] Page %d/%d: %d listings (total: %d, min: %s)",
+            city,
+            page,
+            total_pages,
+            len(items),
+            total_items,
+            f"{cheapest}€" if cheapest else "?",
+        )
+
+        if cheapest and cheapest > resolved_max_price:
+            logger.info("[%s] Passed %d€ ceiling — stopping", city, resolved_max_price)
+            break
+
+        if page >= total_pages or not items:
+            break
+
+        time.sleep(REQUEST_DELAY)
+
+    return responses, complete, session, build_id
+
+
+def fetch(city: str, city_paths: Optional[dict] = None, max_price: Optional[int] = None) -> list[dict]:
+    responses, _, _, _ = fetch_with_context(city, city_paths=city_paths, max_price=max_price)
+    return responses
+
+
+def fetch_details(
+    listings: list[dict],
+    city: str,
+    city_paths: Optional[dict] = None,
+    known_rented_ids: Optional[set[str]] = None,
+    session=None,
+    build_id: Optional[str] = None,
+) -> list[dict]:
+    if not listings:
+        return listings
+
+    scan_bucket = _current_detail_scan_bucket()
+    known_rented_ids = known_rented_ids or set()
+    candidates = [
+        listing
+        for listing in listings
+        if listing.get("is_rented")
+        or listing.get("id") in known_rented_ids
+        or _detail_scan_bucket(str(listing.get("id", ""))) == scan_bucket
+    ]
+    for listing in candidates:
+        if listing.get("id") in known_rented_ids:
+            listing["is_rented"] = True
+    if not candidates:
+        logger.info(
+            "[%s] No full-description candidates in scan bucket %d/%d",
+            city,
+            scan_bucket + 1,
+            DETAIL_SCAN_BUCKETS,
+        )
+        return listings
+
+    resolved_paths = city_paths if city_paths is not None else BUY_CITY_PATHS
+    if city not in resolved_paths:
+        raise ValueError(f"Unsupported city: {city!r}. Supported: {list(resolved_paths)}")
+
+    if session is None:
+        session = curl_requests.Session(impersonate="chrome")
+    if not build_id:
+        search_path, _ = resolved_paths[city]
+        build_id = _get_build_id(session, BASE_URL + search_path)
+        if not build_id:
+            logger.warning("Could not get buildId — skipping detail enrichment")
+            return listings
+
+    enriched = 0
+    logger.info(
+        "[%s] Checking full descriptions for %d/%d listings (bucket %d/%d)",
+        city,
+        len(candidates),
+        len(listings),
+        scan_bucket + 1,
+        DETAIL_SCAN_BUCKETS,
+    )
+
+    for i, listing in enumerate(candidates):
+        url = listing.get("url", "")
+        if not url:
+            continue
+
+        detail = _fetch_detail(session, url, build_id)
+        if detail:
+            description = detail["description"] or listing.get("description", "") or ""
+            full_description = detail["full_description"] or ""
+            combined = f"{description} {full_description}".strip()
+            listing["description"] = description
+            listing["is_rented"] = is_rented(f"{listing.get('title', '')} {combined}")
+            listing["lifetime_rent"] = is_lifetime_rent(combined)
+            if isinstance(listing.get("_raw_json"), dict):
+                listing["_raw_json"]["fullDescription"] = full_description
+            enriched += 1
+        else:
+            listing["is_rented"] = listing.get("is_rented", False) or is_rented(
+                f"{listing.get('title', '')} {listing.get('description', '')}"
+            )
+
+        if (i + 1) % 20 == 0:
+            logger.info("[%s] Detail %d/%d fetched", city, i + 1, len(candidates))
+
+        time.sleep(REQUEST_DELAY)
+
+    logger.info("[%s] Enriched %d/%d listings with full description", city, enriched, len(candidates))
+    return listings

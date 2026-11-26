@@ -9,7 +9,7 @@ from typing import Optional, Sequence
 from alembic import op
 from sqlalchemy import text
 
-from normalization import normalize_location
+from yieldhunter.analysis.normalization import normalize_location
 
 revision: str = "0027"
 down_revision: Optional[str] = "0026"

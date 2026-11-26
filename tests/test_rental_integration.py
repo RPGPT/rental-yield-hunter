@@ -1,11 +1,11 @@
 from unittest.mock import MagicMock, patch
 
-from db.models import RentalListing, RentalListingPriceHistory, RentalRawData
-from db.repository import deactivate_missing_rentals, upsert_rental_listings
-from scraper.imovirtual.constants import RENTAL_CITY_PATHS
-from scraper.imovirtual.fetcher import fetch
-from scraper.imovirtual.parser import parse
 from tests.conftest import make_item
+from yieldhunter.db.models import RentalListing, RentalListingPriceHistory, RentalRawData
+from yieldhunter.db.repository import deactivate_missing_rentals, upsert_rental_listings
+from yieldhunter.sources.imovirtual.client import fetch
+from yieldhunter.sources.imovirtual.constants import RENTAL_CITY_PATHS
+from yieldhunter.sources.imovirtual.parser import parse
 
 BUILD_ID_HTML = '<script id="__NEXT_DATA__" type="application/json">{"buildId":"test-build-rental"}</script>'
 CITY = "Porto"
@@ -29,8 +29,8 @@ def _page(items, total_pages=1, page=1):
 
 
 class TestRentalFullPipeline:
-    @patch("scraper.imovirtual.fetcher.curl_requests")
-    @patch("scraper.imovirtual.fetcher.time")
+    @patch("yieldhunter.sources.imovirtual.client.curl_requests")
+    @patch("yieldhunter.sources.imovirtual.client.time")
     def test_scrape_stores_rental_listings(self, mock_time, mock_curl, clean_rental_db):
         items = [
             make_item(id=9001, href="[lang]/ad/rent-a-ID9001", title="Rent A", totalPrice={"value": 1200}),
@@ -54,8 +54,8 @@ class TestRentalFullPipeline:
         assert len(rows) == 2
         assert {r.title for r in rows} == {"Rent A", "Rent B"}
 
-    @patch("scraper.imovirtual.fetcher.curl_requests")
-    @patch("scraper.imovirtual.fetcher.time")
+    @patch("yieldhunter.sources.imovirtual.client.curl_requests")
+    @patch("yieldhunter.sources.imovirtual.client.time")
     def test_price_change_tracked(self, mock_time, mock_curl, clean_rental_db):
         session = MagicMock()
         mock_curl.Session.return_value = session
@@ -81,8 +81,8 @@ class TestRentalFullPipeline:
         assert len(history) == 1
         assert history[0].price == 950
 
-    @patch("scraper.imovirtual.fetcher.curl_requests")
-    @patch("scraper.imovirtual.fetcher.time")
+    @patch("yieldhunter.sources.imovirtual.client.curl_requests")
+    @patch("yieldhunter.sources.imovirtual.client.time")
     def test_raw_json_stored(self, mock_time, mock_curl, clean_rental_db):
         session = MagicMock()
         mock_curl.Session.return_value = session
@@ -102,8 +102,8 @@ class TestRentalFullPipeline:
         assert raw is not None
         assert raw.raw_json["id"] == 9201
 
-    @patch("scraper.imovirtual.fetcher.curl_requests")
-    @patch("scraper.imovirtual.fetcher.time")
+    @patch("yieldhunter.sources.imovirtual.client.curl_requests")
+    @patch("yieldhunter.sources.imovirtual.client.time")
     def test_deactivate_missing_after_scrape(self, mock_time, mock_curl, clean_rental_db):
         upsert_rental_listings(
             clean_rental_db,
@@ -137,8 +137,8 @@ class TestRentalFullPipeline:
         assert gone.active is False
         assert gone.inactive_since is not None
 
-    @patch("scraper.imovirtual.fetcher.curl_requests")
-    @patch("scraper.imovirtual.fetcher.time")
+    @patch("yieldhunter.sources.imovirtual.client.curl_requests")
+    @patch("yieldhunter.sources.imovirtual.client.time")
     def test_price_filter_excludes_out_of_range(self, mock_time, mock_curl, clean_rental_db):
         session = MagicMock()
         mock_curl.Session.return_value = session
@@ -164,8 +164,8 @@ class TestRentalFullPipeline:
         assert clean_rental_db.query(RentalListing).filter_by(id="9302").count() == 0
         assert clean_rental_db.query(RentalListing).filter_by(id="9303").count() == 0
 
-    @patch("scraper.imovirtual.fetcher.curl_requests")
-    @patch("scraper.imovirtual.fetcher.time")
+    @patch("yieldhunter.sources.imovirtual.client.curl_requests")
+    @patch("yieldhunter.sources.imovirtual.client.time")
     def test_rent_price_per_m2_stored(self, mock_time, mock_curl, clean_rental_db):
         session = MagicMock()
         mock_curl.Session.return_value = session
@@ -188,8 +188,8 @@ class TestRentalFullPipeline:
         row = clean_rental_db.query(RentalListing).filter_by(id="9501").first()
         assert row.rent_price_per_m2 == 15.0
 
-    @patch("scraper.imovirtual.fetcher.curl_requests")
-    @patch("scraper.imovirtual.fetcher.time")
+    @patch("yieldhunter.sources.imovirtual.client.curl_requests")
+    @patch("yieldhunter.sources.imovirtual.client.time")
     def test_no_is_rented_on_rental_model(self, mock_time, mock_curl, clean_rental_db):
         assert "is_rented" not in [c.name for c in RentalListing.__table__.columns]
         assert "lifetime_rent" not in [c.name for c in RentalListing.__table__.columns]

@@ -1,8 +1,12 @@
 import pytest
 from sqlalchemy import text
 
-from db.models import RentalEstimate
-from db.repository import compute_and_upsert_rental_estimates, compute_rental_estimate, refresh_rental_estimates
+from yieldhunter.db.models import RentalEstimate
+from yieldhunter.db.repository import (
+    compute_and_upsert_rental_estimates,
+    compute_rental_estimate,
+    refresh_rental_estimates,
+)
 
 _LISTING = {
     "id": "est-buy-1",

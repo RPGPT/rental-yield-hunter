@@ -1,10 +1,10 @@
 from unittest.mock import MagicMock, patch
 
-from db.models import Listing, ListingPriceHistory, RawData
-from db.repository import upsert_listings
-from scraper.imovirtual.fetcher import fetch_details
-from scraper.imovirtual.parser import parse
 from tests.conftest import make_item
+from yieldhunter.db.models import Listing, ListingPriceHistory, RawData
+from yieldhunter.db.repository import upsert_listings
+from yieldhunter.sources.imovirtual.client import fetch_details
+from yieldhunter.sources.imovirtual.parser import parse
 
 BUILD_ID_HTML = '<script id="__NEXT_DATA__" type="application/json">{"buildId":"test-build-123"}</script>'
 CITY = "Porto"
@@ -28,8 +28,8 @@ def _page(items, total_pages=1, page=1):
 
 
 class TestFullPipeline:
-    @patch("scraper.imovirtual.fetcher.curl_requests")
-    @patch("scraper.imovirtual.fetcher.time")
+    @patch("yieldhunter.sources.imovirtual.client.curl_requests")
+    @patch("yieldhunter.sources.imovirtual.client.time")
     def test_scrape_stores_listings_in_db(self, mock_time, mock_curl, clean_db):
         items = [
             make_item(
@@ -58,7 +58,7 @@ class TestFullPipeline:
         api_resp.json.return_value = _page(items)
         session.get.side_effect = [MagicMock(status_code=200, text=BUILD_ID_HTML), api_resp]
 
-        from scraper.imovirtual.fetcher import fetch
+        from yieldhunter.sources.imovirtual.client import fetch
 
         upsert_listings(clean_db, parse(fetch(CITY), CITY))
 
@@ -79,8 +79,8 @@ class TestFullPipeline:
         assert apt_b.has_garage is True
         assert apt_b.is_rented is False
 
-    @patch("scraper.imovirtual.fetcher.curl_requests")
-    @patch("scraper.imovirtual.fetcher.time")
+    @patch("yieldhunter.sources.imovirtual.client.curl_requests")
+    @patch("yieldhunter.sources.imovirtual.client.time")
     def test_rescrape_updates_price_and_tracks_history(self, mock_time, mock_curl, clean_db):
         session = MagicMock()
         mock_curl.Session.return_value = session
@@ -89,7 +89,7 @@ class TestFullPipeline:
         api_v1.json.return_value = _page([make_item(id=2001, href="[lang]/ad/x-ID2001", totalPrice={"value": 200000})])
         session.get.side_effect = [MagicMock(status_code=200, text=BUILD_ID_HTML), api_v1]
 
-        from scraper.imovirtual.fetcher import fetch
+        from yieldhunter.sources.imovirtual.client import fetch
 
         upsert_listings(clean_db, parse(fetch(CITY), CITY))
         assert clean_db.query(Listing).filter(Listing.id == "2001").first().price == 200000
@@ -106,8 +106,8 @@ class TestFullPipeline:
         assert len(history) == 1
         assert history[0].price == 185000
 
-    @patch("scraper.imovirtual.fetcher.curl_requests")
-    @patch("scraper.imovirtual.fetcher.time")
+    @patch("yieldhunter.sources.imovirtual.client.curl_requests")
+    @patch("yieldhunter.sources.imovirtual.client.time")
     def test_raw_json_stored(self, mock_time, mock_curl, clean_db):
         session = MagicMock()
         mock_curl.Session.return_value = session
@@ -115,7 +115,7 @@ class TestFullPipeline:
         api_resp.json.return_value = _page([make_item(id=3001, href="[lang]/ad/z-ID3001")])
         session.get.side_effect = [MagicMock(status_code=200, text=BUILD_ID_HTML), api_resp]
 
-        from scraper.imovirtual.fetcher import fetch
+        from yieldhunter.sources.imovirtual.client import fetch
 
         upsert_listings(clean_db, parse(fetch(CITY), CITY))
 
@@ -123,8 +123,8 @@ class TestFullPipeline:
         assert raw is not None
         assert raw.raw_json["id"] == 3001
 
-    @patch("scraper.imovirtual.fetcher.curl_requests")
-    @patch("scraper.imovirtual.fetcher.time")
+    @patch("yieldhunter.sources.imovirtual.client.curl_requests")
+    @patch("yieldhunter.sources.imovirtual.client.time")
     def test_dedup_same_listing_different_pages(self, mock_time, mock_curl, clean_db):
         session = MagicMock()
         mock_curl.Session.return_value = session
@@ -135,13 +135,13 @@ class TestFullPipeline:
         page2.json.return_value = _page([item], total_pages=2, page=2)
         session.get.side_effect = [MagicMock(status_code=200, text=BUILD_ID_HTML), page1, page2]
 
-        from scraper.imovirtual.fetcher import fetch
+        from yieldhunter.sources.imovirtual.client import fetch
 
         upsert_listings(clean_db, parse(fetch(CITY), CITY))
         assert clean_db.query(Listing).filter(Listing.id == "4001").count() == 1
 
-    @patch("scraper.imovirtual.fetcher.curl_requests")
-    @patch("scraper.imovirtual.fetcher.time")
+    @patch("yieldhunter.sources.imovirtual.client.curl_requests")
+    @patch("yieldhunter.sources.imovirtual.client.time")
     def test_price_filter_excludes_expensive(self, mock_time, mock_curl, clean_db):
         session = MagicMock()
         mock_curl.Session.return_value = session
@@ -154,14 +154,14 @@ class TestFullPipeline:
         )
         session.get.side_effect = [MagicMock(status_code=200, text=BUILD_ID_HTML), api_resp]
 
-        from scraper.imovirtual.fetcher import fetch
+        from yieldhunter.sources.imovirtual.client import fetch
 
         upsert_listings(clean_db, parse(fetch(CITY), CITY))
         assert clean_db.query(Listing).filter(Listing.id == "5001").count() == 1
         assert clean_db.query(Listing).filter(Listing.id == "5002").count() == 0
 
-    @patch("scraper.imovirtual.fetcher.curl_requests")
-    @patch("scraper.imovirtual.fetcher.time")
+    @patch("yieldhunter.sources.imovirtual.client.curl_requests")
+    @patch("yieldhunter.sources.imovirtual.client.time")
     def test_first_seen_preserved_across_runs(self, mock_time, mock_curl, clean_db):
         session = MagicMock()
         mock_curl.Session.return_value = session
@@ -171,7 +171,7 @@ class TestFullPipeline:
         api1.json.return_value = _page([item])
         session.get.side_effect = [MagicMock(status_code=200, text=BUILD_ID_HTML), api1]
 
-        from scraper.imovirtual.fetcher import fetch
+        from yieldhunter.sources.imovirtual.client import fetch
 
         upsert_listings(clean_db, parse(fetch(CITY), CITY))
         first_seen = clean_db.query(Listing).filter(Listing.id == "6001").first().first_seen
@@ -185,8 +185,8 @@ class TestFullPipeline:
 
         assert clean_db.query(Listing).filter(Listing.id == "6001").first().first_seen == first_seen
 
-    @patch("scraper.imovirtual.fetcher.curl_requests")
-    @patch("scraper.imovirtual.fetcher.time")
+    @patch("yieldhunter.sources.imovirtual.client.curl_requests")
+    @patch("yieldhunter.sources.imovirtual.client.time")
     def test_lifetime_rent_via_enrich(self, mock_time, mock_curl, clean_db):
         session = MagicMock()
         mock_curl.Session.return_value = session
@@ -203,7 +203,7 @@ class TestFullPipeline:
         )
         session.get.side_effect = [MagicMock(status_code=200, text=BUILD_ID_HTML), api_resp]
 
-        from scraper.imovirtual.fetcher import fetch
+        from yieldhunter.sources.imovirtual.client import fetch
 
         listings = parse(fetch(CITY), CITY)
         assert listings[0]["is_rented"] is True

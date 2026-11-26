@@ -1,4 +1,4 @@
-from normalization import normalize_location
+from yieldhunter.analysis.normalization import normalize_location
 
 
 def test_alias_maps_to_canonical():

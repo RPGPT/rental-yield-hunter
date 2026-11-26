@@ -3,12 +3,12 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from testcontainers.postgres import PostgresContainer
 
-from db.models import Base
+from yieldhunter.db.models import Base
 
 
 @pytest.fixture(scope="session")
 def pg():
-    with PostgresContainer("postgres:16-alpine") as postgres:
+    with PostgresContainer("postgres:16-alpine", driver="psycopg") as postgres:
         yield postgres
 
 

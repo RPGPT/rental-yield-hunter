@@ -220,4 +220,5 @@ __marimo__/
 .streamlit/secrets.toml
 logs/
 scrape*.log
+stats-*.json
 .idea/
