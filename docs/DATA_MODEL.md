@@ -1,70 +1,49 @@
 # Data model
 
-PostgreSQL (Neon in prod). ORM models live in `yieldhunter/db/models.py` and are kept in 100% parity with Alembic
-migrations in `migrations/versions/` (current head: **0029**).
+PostgreSQL (Neon in prod). ORM models live in `yieldhunter/db/models.py` in 100% parity with Alembic migrations
+`0001`–`0030`.
 
 ```mermaid
 erDiagram
     listings ||--o{ listing_price_history : "price changes"
-    listings ||--o| raw_data : "latest API JSON"
-    listings ||--o| rental_estimates : "estimated rent/yield"
-    listings ||--o| rent_contract_details : "extracted contract"
+    listings ||--o| raw_data : "latest JSON"
+    listings ||--o| rental_estimates : "curved rent/yield"
+    listings ||--o| rent_contract_details : "contract + reversion"
+    listings ||--o| listing_clusters : "dedup + spread"
+    listings ||--o{ alert_notifications : "sent alerts"
+    saved_searches ||--o{ alert_notifications : "triggers"
     rental_listings ||--o{ rental_listing_price_history : "price changes"
-    rental_listings ||--o| rental_raw_data : "latest API JSON"
+    rental_listings ||--o| rental_raw_data : "latest JSON"
 ```
 
-## Scraper-owned tables
+## Tables
 
-### `listings` (`Listing`) / `rental_listings` (`RentalListing`)
-PK `id` (text). Shared columns:
+### `listings` (`Listing`) & `rental_listings` (`RentalListing`)
+- Identity & URL: `id` PK (`<num>`, `era-<Ref>`, `casasapo-<UUID>`), `source`, `url`.
+- Pricing & motivated-seller signals: `price`, `initial_price` (immutable first-seen price), `price_drop_amount`
+  (`initial_price - price`), `price_drop_pct`, `price_change_count`, `area`, `price_per_m2` (+ `rent_price_per_m2` on rentals).
+- Location & attributes: `location`, `neighborhood`, `city`, `property_type`, `typology`, `floor`, `has_garage`.
+- Status: `active`, `inactive_since`, `is_deleted` (sacred frontend flag), `first_seen`, `last_seen`, `created_at`, `updated_at`.
+- Buy-only flags: `is_rented`, `lifetime_rent`.
 
-| Column | Notes |
-|---|---|
-| `id`, `source`, `url` | `source` ∈ `imovirtual`, `era`. ERA ids are prefixed `era-` |
-| `title`, `description` | `description` holds full text after buy enrichment |
-| `price` (int), `area` (int m²), `price_per_m2` (float) | buy: EUR; rent: EUR/month |
-| `location`, `neighborhood`, `city` | normalized at upsert (`yieldhunter/analysis/normalization.py`) |
-| `property_type`, `typology` (`T0`…), `floor` (text), `has_garage` | |
-| `active`, `inactive_since` | managed by `_deactivate_missing` (when scrape is complete) / reactivation on upsert |
-| `is_deleted` | set by the frontend. **Rows with `is_deleted = true` are never updated by scrapes** |
-| `first_seen`, `created_at` | never overwritten on upsert |
-| `last_seen`, `updated_at` | refreshed on every scrape |
-
-Only on `listings`: `is_rented`, `lifetime_rent`. Only on `rental_listings`: `rent_price_per_m2`.
-
-### `listing_price_history` / `rental_listing_price_history`
-`id` serial, `listing_id` FK, `price`, `captured_at`. One row per detected price change (never for initial insert).
-
-### `raw_data` / `rental_raw_data`
-PK/FK `listing_id`, `raw_json` JSONB (Imovirtual buy items include `fullDescription`), `captured_at`.
+### `listing_price_history` & `rental_listing_price_history`
+`id` serial, `listing_id` FK, `previous_price` (price prior to change), `price` (new price), `captured_at`.
 
 ### `rental_estimates` (`RentalEstimate`)
-PK/FK `listing_id` → `listings.id ON DELETE CASCADE`. `estimated_rent` int, `avg_rent_per_m2` numeric(10,2),
-`sample_count`, `confidence` (`high|medium|low|none`), `match_level`
-(`neighborhood|city|neighborhood_broad|city_broad|none`), `rental_yield` numeric(8,4) (0.0612 = 6.12%), `computed_at`.
+`listing_id` PK/FK, `estimated_rent`, `avg_rent_per_m2`, `sample_count`, `confidence`, `match_level`, `rental_yield`, `computed_at`.
 
 ### `rent_contract_details` (`RentContractDetail`)
-PK/FK `listing_id` → `listings.id ON DELETE CASCADE`. `current_rent` numeric(10,2), `contract_expiry_date` date,
-`raw_rent_text`, `raw_expiry_text`, `confidence` numeric(3,2), `extracted_at`, `updated_at`.
+`listing_id` PK/FK, `current_rent`, `contract_expiry_date`, `raw_rent_text`, `raw_expiry_text`, `confidence`, plus
+lease-upside columns: `current_yield` (`current_rent * 12 / price`), `reversion_yield` (`estimated_rent * 12 / price`),
+`rent_upside_pct` (`(estimated_rent - current_rent) / current_rent`), and `months_to_expiry`.
 
-## Frontend & archival tables (owned by the Angular app; models + migrations live here)
+### `listing_clusters` (`ListingCluster`)
+`listing_id` PK/FK, `cluster_id` (indexed), `cluster_size`, `cluster_min_price`, `cluster_max_price`, `price_spread`,
+`price_spread_pct`, `is_cheapest`, `sources` (JSONB list of sources), `computed_at`.
 
-| Table | Model | Columns |
-|---|---|---|
-| `user_favorites` | `UserFavorite` | `(user_id, listing_id)` PK, `created_at` (no FK since 0016; covers buy + rent IDs) |
-| `user_hidden` | `UserHidden` | `(user_id, listing_id)` PK, `created_at` |
-| `audit_log` | `AuditLog` | `id` bigserial, `action`, `listing_id`, `user_id`, `user_email`, `created_at` |
-| `saved_searches` | `SavedSearch` | `id` bigserial, `user_id` (indexed), `name`, `filters` JSONB, `last_checked_at`, `created_at` |
-| `listing_snapshots` | `ListingSnapshot` | `listing_id` PK, `blob_url`, `created_at` |
+### `saved_searches` (`SavedSearch`) & `alert_notifications` (`AlertNotification`)
+- `saved_searches`: `id` bigserial, `user_id`, `name`, `filters` JSONB, `last_checked_at`, `created_at`.
+- `alert_notifications`: `(saved_search_id, listing_id, triggered_price)` PK, `trigger_type` (`new` | `price_drop`), `sent_at`.
 
-`user_id` references `neon_auth.users.id` (enforced in frontend application code).
-
-## Writing a migration
-
-```python
-# migrations/versions/0030_<slug>.py
-revision: str = "0030"
-down_revision: Optional[str] = "0029"
-```
-- Update `yieldhunter/db/models.py` alongside the migration so unit tests (`create_all`) and Alembic stay identical.
-- Prefer idempotent SQL (`CREATE TABLE IF NOT EXISTS`) like 0028/0029, and always provide `downgrade()`.
+### Frontend & archival tables
+`user_favorites` (`UserFavorite`), `user_hidden` (`UserHidden`), `audit_log` (`AuditLog`), `listing_snapshots` (`ListingSnapshot`).

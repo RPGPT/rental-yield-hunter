@@ -17,7 +17,11 @@ from curl_cffi import requests as curl_requests
 
 from yieldhunter.analysis.contracts import extract_rent_and_expiry
 from yieldhunter.config import REQUEST_DELAY
-from yieldhunter.db.repository import get_rented_listings_for_extraction, upsert_contract_details
+from yieldhunter.db.repository import (
+    get_rented_listings_for_extraction,
+    sync_contract_upside_metrics,
+    upsert_contract_details,
+)
 from yieldhunter.db.session import session_scope
 from yieldhunter.pipeline.stats import city_slug, write_stats_file
 from yieldhunter.sources.imovirtual.client import _fetch_detail, _get_build_id
@@ -103,7 +107,10 @@ def run_extract_contracts(city: Optional[str] = None) -> dict:
 
     if details_to_upsert:
         with session_scope() as db:
-            upsert_contract_details(db, details_to_upsert)
+            upsert_contract_details(db, details_to_upsert, city=city)
+    else:
+        with session_scope() as db:
+            sync_contract_upside_metrics(db, city=city)
 
     stats = {
         "type": "contracts",

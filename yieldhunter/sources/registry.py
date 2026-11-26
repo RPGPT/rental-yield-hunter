@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from yieldhunter.sources.base import Scraper
+from yieldhunter.sources.casasapo import CasaSapoBuyScraper, CasaSapoRentalScraper
 from yieldhunter.sources.era import ERABuyScraper, ERARentalScraper
 from yieldhunter.sources.imovirtual import ImovirtualBuyScraper, ImovirtualRentalScraper
 
@@ -14,6 +15,10 @@ SCRAPERS: dict[str, dict[str, type[Scraper]]] = {
     "era": {
         "buy": ERABuyScraper,
         "rent": ERARentalScraper,
+    },
+    "casasapo": {
+        "buy": CasaSapoBuyScraper,
+        "rent": CasaSapoRentalScraper,
     },
 }
 

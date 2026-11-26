@@ -1,4 +1,4 @@
-"""SQLAlchemy ORM models — kept in full parity with Alembic migrations 0001..0029."""
+"""SQLAlchemy ORM models — kept in full parity with Alembic migrations 0001..0030."""
 
 from __future__ import annotations
 
@@ -21,6 +21,10 @@ class Listing(Base):
     description = Column(Text)
 
     price = Column(Integer)
+    initial_price = Column(Integer)
+    price_drop_amount = Column(Integer)
+    price_drop_pct = Column(Numeric(8, 4))
+    price_change_count = Column(Integer, nullable=False, default=0, server_default="0")
     area = Column(Integer)
     price_per_m2 = Column(Float)
 
@@ -49,6 +53,7 @@ class Listing(Base):
     raw = relationship("RawData", back_populates="listing", uselist=False)
     rental_estimate = relationship("RentalEstimate", back_populates="listing", uselist=False)
     contract_detail = relationship("RentContractDetail", back_populates="listing", uselist=False)
+    cluster = relationship("ListingCluster", back_populates="listing", uselist=False)
 
 
 class ListingPriceHistory(Base):
@@ -56,6 +61,7 @@ class ListingPriceHistory(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     listing_id = Column(Text, ForeignKey("listings.id"), nullable=False)
+    previous_price = Column(Integer, nullable=True)
     price = Column(Integer)
     captured_at = Column(TIMESTAMP, server_default=func.now())
 
@@ -91,6 +97,10 @@ class RentalListing(Base):
     description = Column(Text)
 
     price = Column(Integer)
+    initial_price = Column(Integer)
+    price_drop_amount = Column(Integer)
+    price_drop_pct = Column(Numeric(8, 4))
+    price_change_count = Column(Integer, nullable=False, default=0, server_default="0")
     area = Column(Integer)
     price_per_m2 = Column(Float)
     rent_price_per_m2 = Column(Float)
@@ -123,6 +133,7 @@ class RentalListingPriceHistory(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     listing_id = Column(Text, ForeignKey("rental_listings.id"), nullable=False)
+    previous_price = Column(Integer, nullable=True)
     price = Column(Integer)
     captured_at = Column(TIMESTAMP, server_default=func.now())
 
@@ -163,10 +174,41 @@ class RentContractDetail(Base):
     raw_rent_text = Column(Text, nullable=True)
     raw_expiry_text = Column(Text, nullable=True)
     confidence = Column(Numeric(3, 2), nullable=True)
+    current_yield = Column(Numeric(8, 4), nullable=True)
+    reversion_yield = Column(Numeric(8, 4), nullable=True)
+    rent_upside_pct = Column(Numeric(8, 4), nullable=True)
+    months_to_expiry = Column(Integer, nullable=True)
     extracted_at = Column(TIMESTAMP, server_default=func.now())
     updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
 
     listing = relationship("Listing", back_populates="contract_detail")
+
+
+class ListingCluster(Base):
+    __tablename__ = "listing_clusters"
+
+    listing_id = Column(Text, ForeignKey("listings.id", ondelete="CASCADE"), primary_key=True)
+    cluster_id = Column(Text, nullable=False, index=True)
+    cluster_size = Column(Integer, nullable=False)
+    cluster_min_price = Column(Integer, nullable=False)
+    cluster_max_price = Column(Integer, nullable=False)
+    price_spread = Column(Integer, nullable=False)
+    price_spread_pct = Column(Numeric(8, 4), nullable=False)
+    is_cheapest = Column(Boolean, nullable=False, default=True, server_default="true")
+    sources = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    computed_at = Column(TIMESTAMP, nullable=False, server_default=func.now())
+
+    listing = relationship("Listing", back_populates="cluster")
+
+
+class AlertNotification(Base):
+    __tablename__ = "alert_notifications"
+
+    saved_search_id = Column(BigInteger, ForeignKey("saved_searches.id", ondelete="CASCADE"), primary_key=True)
+    listing_id = Column(Text, ForeignKey("listings.id", ondelete="CASCADE"), primary_key=True)
+    triggered_price = Column(Integer, primary_key=True)
+    trigger_type = Column(Text, nullable=False)  # new | price_drop
+    sent_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
 
 
 class UserFavorite(Base):

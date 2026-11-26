@@ -550,3 +550,77 @@ class TestUpsertWithoutUrl:
 
         # sanitize was called exactly once (only for the listing that has "url")
         assert len(sanitized) == 1
+
+
+class TestMotivatedSellerPriceSignalsAndLeaseUpside:
+    def test_tracks_initial_price_previous_price_and_cumulative_drop(self, clean_db):
+        # Initial sighting at €250,000
+        upsert_listings(clean_db, [{**_BASE, "id": "drop-1", "price": 250_000}])
+        row = clean_db.query(Listing).filter_by(id="drop-1").one()
+        assert row.initial_price == 250_000
+        assert row.price_drop_amount == 0
+        assert float(row.price_drop_pct) == 0.0
+        assert row.price_change_count == 0
+
+        # Cut #1 to €235,000, then Cut #2 to €220,000
+        upsert_listings(clean_db, [{**_BASE, "id": "drop-1", "price": 235_000}])
+        upsert_listings(clean_db, [{**_BASE, "id": "drop-1", "price": 220_000}])
+        clean_db.expire_all()
+
+        row = clean_db.query(Listing).filter_by(id="drop-1").one()
+        assert row.initial_price == 250_000  # never overwritten
+        assert row.price == 220_000
+        assert row.price_drop_amount == 30_000
+        assert float(row.price_drop_pct) == round(30_000 / 250_000, 4)
+        assert row.price_change_count == 2
+
+        history = (
+            clean_db.query(ListingPriceHistory).filter_by(listing_id="drop-1").order_by(ListingPriceHistory.id).all()
+        )
+        assert [(h.previous_price, h.price) for h in history] == [(250_000, 235_000), (235_000, 220_000)]
+
+    def test_computes_lease_expiry_upside_metrics(self, clean_db):
+        from datetime import date
+
+        from yieldhunter.db.models import RentalEstimate, RentContractDetail
+        from yieldhunter.db.repository import upsert_contract_details
+
+        try:
+            upsert_listings(clean_db, [{**_BASE, "id": "tenanted-1", "price": 200_000, "is_rented": True}])
+            clean_db.add(
+                RentalEstimate(
+                    listing_id="tenanted-1",
+                    estimated_rent=1_000,
+                    avg_rent_per_m2=12.5,
+                    sample_count=6,
+                    confidence="high",
+                    match_level="neighborhood",
+                    rental_yield=0.06,
+                )
+            )
+            clean_db.commit()
+
+            upsert_contract_details(
+                clean_db,
+                [
+                    {
+                        "listing_id": "tenanted-1",
+                        "current_rent": 500.0,
+                        "contract_expiry_date": date(2027, 6, 30),
+                        "raw_rent_text": "500€",
+                        "raw_expiry_text": "junho 2027",
+                        "confidence": 0.9,
+                    }
+                ],
+            )
+            clean_db.expire_all()
+
+            rcd = clean_db.query(RentContractDetail).filter_by(listing_id="tenanted-1").one()
+            assert float(rcd.current_yield) == 0.0300  # 500 * 12 / 200,000
+            assert float(rcd.reversion_yield) == 0.0600  # 1000 * 12 / 200,000
+            assert float(rcd.rent_upside_pct) == 1.0000  # +100% upside (500 -> 1000)
+            assert rcd.months_to_expiry is not None
+        finally:
+            clean_db.execute(text("DELETE FROM rent_contract_details"))
+            clean_db.execute(text("DELETE FROM rental_estimates"))
+            clean_db.commit()

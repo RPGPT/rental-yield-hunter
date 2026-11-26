@@ -84,6 +84,9 @@ def _reset_flow_tables(engine) -> None:
             text(
                 """
                 TRUNCATE TABLE
+                    alert_notifications,
+                    saved_searches,
+                    listing_clusters,
                     rent_contract_details,
                     rental_estimates,
                     raw_data,
@@ -176,15 +179,28 @@ class TestFullPipelineGoldenMatch:
         ):
             contract_stats = app_main.run_extract_contracts(city=None)
             estimate_stats = app_main.run_refresh_estimates(city=None)
+            cluster_stats = app_main.run_refresh_clusters(city=None)
+            alert_stats = app_main.run_send_alerts()
 
         assert replayer.unrecorded == []
         assert empty_replayer.requests == []
         assert run_stats == golden["scrape_stats"]
         assert estimate_stats == golden["estimate_stats"]
         assert contract_stats == golden["contract_stats"]
+        assert cluster_stats["listings"] == len(golden["db"]["listings"])
+        assert alert_stats["searches_matched"] == 0
 
         with isolated_app_db() as db:
             actual_snapshot = dump_db_snapshot(db)
+            # Verify lease-upside fields populated on extracted contracts
+            upside_rows = (
+                db.execute(text("SELECT current_yield, reversion_yield, rent_upside_pct FROM rent_contract_details"))
+                .mappings()
+                .all()
+            )
+            assert len(upside_rows) == 3
+            assert all(r["current_yield"] is not None for r in upside_rows)
+            assert any(r["reversion_yield"] is not None and r["rent_upside_pct"] is not None for r in upside_rows)
 
         assert actual_snapshot == golden["db"]
 
@@ -200,6 +216,8 @@ class TestFullPipelineGoldenMatch:
         assert "### 🔑 Rent" in summary_md
         assert "### 📋 Contract Details" in summary_md
         assert "### 📊 Rent Estimates" in summary_md
+        assert "### 🔗 Multi-Agency Clusters" in summary_md
+        assert "### 🔔 Deal Alerts" in summary_md
         assert "| Ermesinde |" in summary_md
         assert "| Maia |" in summary_md
         assert "| Penafiel |" in summary_md
@@ -308,12 +326,22 @@ class TestStatefulLifecycleFlows:
         with isolated_app_db() as db:
             new_price = db.execute(text("SELECT price FROM listings WHERE id = :id"), {"id": changed_id}).scalar_one()
             assert new_price == orig_changed_price + 7_500
-            hist = (
-                db.execute(text("SELECT price FROM listing_price_history WHERE listing_id = :id"), {"id": changed_id})
-                .scalars()
-                .all()
+            sig = (
+                db.execute(
+                    text("SELECT initial_price, price_drop_amount, price_change_count FROM listings WHERE id = :id"),
+                    {"id": changed_id},
+                )
+                .mappings()
+                .one()
             )
-            assert hist == [orig_changed_price + 7_500]
+            assert sig["initial_price"] == orig_changed_price
+            assert sig["price_drop_amount"] == -7_500
+            assert sig["price_change_count"] == 1
+            hist = db.execute(
+                text("SELECT previous_price, price FROM listing_price_history WHERE listing_id = :id"),
+                {"id": changed_id},
+            ).fetchall()
+            assert [(h[0], h[1]) for h in hist] == [(orig_changed_price, orig_changed_price + 7_500)]
 
             rent_hist = (
                 db.execute(

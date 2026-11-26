@@ -1,4 +1,4 @@
-"""Upsert, price-history tracking, and scoped deactivation for buy and rental listings."""
+"""Upsert, price-history / price-drop tracking, and scoped deactivation for buy and rental listings."""
 
 from __future__ import annotations
 
@@ -27,14 +27,44 @@ _EXCLUDE_FROM_UPSERT = {"first_seen", "created_at", "is_deleted", "id", "source"
 
 
 def _get_existing(db: Session, ids: list[str], table: str) -> dict:
-    """Return ``{id: {price, is_deleted, active}}`` for all *ids* that already exist in *table*."""
+    """Return ``{id: {price, initial_price, price_change_count, is_deleted, active}}`` for existing rows."""
     if not ids:
         return {}
     rows = db.execute(
-        text(f"SELECT id, price, is_deleted, active FROM {table} WHERE id = ANY(:ids)"),
+        text(
+            f"SELECT id, price, initial_price, price_change_count, is_deleted, active FROM {table} WHERE id = ANY(:ids)"
+        ),
         {"ids": ids},
     ).fetchall()
-    return {r[0]: {"price": r[1], "is_deleted": r[2], "active": r[3]} for r in rows}
+    return {
+        r[0]: {
+            "price": r[1],
+            "initial_price": r[2],
+            "price_change_count": r[3] or 0,
+            "is_deleted": r[4],
+            "active": r[5],
+        }
+        for r in rows
+    }
+
+
+def _compute_price_signals(
+    price: Optional[int],
+    initial_price: Optional[int],
+    change_count: int,
+) -> dict:
+    if price is not None and initial_price is not None:
+        drop_amount = initial_price - price
+        drop_pct = round(drop_amount / initial_price, 4) if initial_price > 0 else 0.0
+    else:
+        drop_amount = None
+        drop_pct = None
+    return {
+        "initial_price": initial_price,
+        "price_drop_amount": drop_amount,
+        "price_drop_pct": drop_pct,
+        "price_change_count": change_count,
+    }
 
 
 def _upsert(
@@ -62,16 +92,36 @@ def _upsert(
 
     price_changes = []
     reactivated = []
+    clean = []
+
     for listing in listings:
+        price = listing.get("price")
         row = existing.get(listing["id"])
-        if row and not row["is_deleted"]:
-            if listing.get("price") is not None and row["price"] != listing["price"]:
-                price_changes.append({"listing_id": listing["id"], "price": listing["price"]})
+        if row is None:
+            signals = _compute_price_signals(price, price, 0)
+        elif row["is_deleted"]:
+            signals = _compute_price_signals(price, row["initial_price"] or row["price"], row["price_change_count"])
+        else:
+            init_price = row["initial_price"] if row["initial_price"] is not None else row["price"]
+            if init_price is None:
+                init_price = price
+            change_count = row["price_change_count"]
+            if price is not None and row["price"] != price:
+                price_changes.append(
+                    {
+                        "listing_id": listing["id"],
+                        "previous_price": row["price"],
+                        "price": price,
+                    }
+                )
+                change_count += 1
             if not row["active"]:
                 reactivated.append(listing["id"])
                 logger.info("Reactivating listing %s — found again after being inactive", listing["id"])
+            signals = _compute_price_signals(price, init_price, change_count)
 
-    clean = [{k: v for k, v in listing.items() if k in listing_columns} for listing in listings]
+        merged = {**listing, **signals}
+        clean.append({k: v for k, v in merged.items() if k in listing_columns})
 
     for chunk in chunks(clean):
         stmt = insert(listing_model).values(chunk)

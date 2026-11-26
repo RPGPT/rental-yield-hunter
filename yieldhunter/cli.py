@@ -8,7 +8,13 @@ import pathlib
 from typing import Optional
 
 from yieldhunter.config import SUPPORTED_CITIES
-from yieldhunter.pipeline import run_extract_contracts, run_refresh_estimates, scrape_all
+from yieldhunter.pipeline import (
+    run_extract_contracts,
+    run_refresh_clusters,
+    run_refresh_estimates,
+    run_send_alerts,
+    scrape_all,
+)
 from yieldhunter.pipeline.stats import main as summarize_main
 from yieldhunter.sources.registry import SCRAPERS
 
@@ -19,9 +25,9 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument(
         "--type",
         dest="listing_type",
-        choices=["buy", "rent", "estimates", "contracts", "summarize"],
+        choices=["buy", "rent", "estimates", "contracts", "clusters", "alerts", "summarize"],
         default="buy",
-        help="buy/rent scraping, rent estimates refresh, contract detail extraction, or CI summary.",
+        help="buy/rent scraping, estimates, contracts, clusters, saved-search alerts, or CI summary.",
     )
     ap.add_argument(
         "--city",
@@ -54,6 +60,10 @@ def main(argv: Optional[list[str]] = None) -> None:
         run_refresh_estimates(city=args.city)
     elif args.listing_type == "contracts":
         run_extract_contracts(city=args.city)
+    elif args.listing_type == "clusters":
+        run_refresh_clusters(city=args.city)
+    elif args.listing_type == "alerts":
+        run_send_alerts()
     elif args.listing_type == "summarize":
         summarize_main([str(pathlib.Path(args.stats_dir))])
     else:

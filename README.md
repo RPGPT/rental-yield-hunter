@@ -1,8 +1,9 @@
 # Rental Yield Hunter
 
-Daily scraper and yield analyzer for Porto-area apartment listings on **imovirtual.com** and **era.pt**. Tracks buy and
-rental listings separately, records price history, flags already-tenanted properties, extracts their current rent and
-contract expiry, and estimates the market rent and gross yield of every buy listing from comparable rentals.
+Daily scraper and investment-analysis pipeline for Porto-area apartment listings across **imovirtual.com**, **era.pt**,
+and **casa.sapo.pt**. Tracks buy and rental listings, preserves original asking prices and cumulative price cuts, flags
+tenanted properties, computes lease-expiry reversion upside, deduplicates multi-agency listings to surface price spreads,
+estimates non-linear market rent and gross yield, and dispatches saved-search deal alerts.
 
 > Working on this repo with an AI agent? Start with [AGENTS.md](AGENTS.md). Deeper docs live in [docs/](docs/).
 
@@ -11,116 +12,76 @@ contract expiry, and estimates the market rent and gross yield of every buy list
 | Layer | Technology |
 |---|---|
 | Language | Python 3.12 (`yieldhunter` package) |
-| HTTP | `curl_cffi` (Chrome TLS-fingerprint impersonation) |
-| ORM / Migrations | SQLAlchemy + Alembic (`0001` → `0029`) |
-| Parsing helpers | `word2number` (typology), `dateparser` (contract expiry) |
+| HTTP | `curl_cffi` (Chrome TLS-fingerprint impersonation + polite backoff) |
+| ORM / Migrations | SQLAlchemy + Alembic (`0001` → `0030`) |
+| Parsing helpers | `word2number` (typology/floors), `dateparser` (contract expiry) |
 | Database | PostgreSQL: Neon (prod) / testcontainers (tests) |
 | CI / CD | GitHub Actions: `test.yml` (PRs), `scrape.yml` (daily 04:00 UTC), `migrate.yml` (manual) |
+| Alerts | Telegram Bot API, Resend Email API, or JSON Webhook (optional secrets) |
 | Frontend | Angular 21 + Neon Auth (separate repo, reads the same DB) |
 
 ## Coverage
 
-- **Sources:** Imovirtual, ERA
+- **Sources:** Imovirtual (`imovirtual`), ERA (`era`), Casa Sapo (`casasapo`)
 - **Cities:** Porto · Matosinhos · Vila Nova de Gaia · Maia · Paços de Ferreira · Penafiel · Paredes · Ermesinde · Alfena
-  (Ermesinde and Alfena are Valongo parishes, stored under their own city name)
 - **Price bands:** buy €50k–€405k · rent €300–€4,000/month (`yieldhunter/config.py`)
 
-## How it works
+## Daily Pipeline
 
 ```
-scrape buy (source × city) ─▶ scrape rent (source × city) ─┬─▶ extract contract details (stored descriptions)
-                                                           └─▶ refresh rental estimates  (size-curved weighted median)
+scrape buy (3 sources × 9 cities) ─▶ scrape rent (3 sources × 9 cities) ─┬─▶ extract contracts + lease upside
+                                                                         ├─▶ refresh size-curved rent estimates
+                                                                         └─▶ cluster multi-agency duplicates
+                                                                                       │
+                                                                                       ▼
+                                                                           dispatch saved-search alerts ─▶ summary
 ```
 
-1. **Scrape (`yieldhunter/sources/`).** Each scraper runs `fetch → parse → enrich` while reusing a single HTTP session and
-   `buildId`/CSRF token. Results are sorted by price ascending and stop at the price ceiling.
-2. **Upsert & safe deactivation (`yieldhunter/db/repository/listings.py`).** Neighborhoods are normalized to official
-   freguesias, price changes go to history, and missing listings are marked inactive (scoped to `source + city`, and
-   skipped automatically if a scrape was incomplete).
-3. **Rented detection (`yieldhunter/analysis/rented.py`).** Keyword match on title and description (`arrendado`,
-   `inquilino`, …) plus accent-insensitive lifetime-rent (`vitalício/a`) detection. Imovirtual buy listings rotate detail
-   scans weekly (always refreshing known-rented IDs); ERA buy listings enrich every listing.
-4. **Contract extraction (`yieldhunter/pipeline/contracts.py`).** Deterministic regex + `dateparser` extraction over the
-   already-stored full descriptions in Postgres (zero redundant HTTP calls).
-5. **Rental estimates (`yieldhunter/db/repository/estimates.py`).** Size-curved weighted-median comparables
-   (`adjusted_rent = comp_rent × (target_area / comp_area)^0.30`) over active + 60-day recently-rented listings,
-   accounting for diminishing €/m² on larger apartments and resisting luxury outliers.
-
-## Structure
-
-```
-rental-yield-hunter/
-├── AGENTS.md                        # quickstart context for AI coding sessions
-├── docs/                            # ARCHITECTURE, SCRAPERS, DATA_MODEL, OPERATIONS
-├── main.py                          # thin CLI shim -> yieldhunter.cli
-├── seed.py                          # seed two local test listings
-├── yieldhunter/
-│   ├── cli.py, __main__.py          # CLI (--source, --type, --city, --parallel, --stats-dir)
-│   ├── config.py                    # price bounds, cities, parish cities, delay, keywords
-│   ├── db/                          # lazy session_scope(), ORM models, chunked repositories
-│   ├── analysis/                    # normalization, rented/lifetime flags, typology, contract extractor
-│   ├── sources/                     # Scraper ABC, ScrapeResult, Imovirtual & ERA clients/parsers
-│   └── pipeline/                    # scrape, estimates, contracts, CI Markdown summary renderer
-├── migrations/versions/             # Alembic 0001 → 0029
-├── tests/                           # unit tests + tests/flows/ (recorded real HTTP + golden snapshots)
-└── .github/workflows/               # test.yml, scrape.yml, migrate.yml
-```
-
-## Setup
-
-```bash
-git clone https://github.com/RPGPT/rental-yield-hunter.git
-cd rental-yield-hunter
-cp .env.example .env            # set DATABASE_URL
-pip install -r requirements.txt
-python3 -m alembic upgrade head
-```
+1. **Scrape (`yieldhunter/sources/`).** Sorted cheapest-first, stopping at the price ceiling; incomplete runs skip deactivation.
+2. **Price-drop & motivated-seller signals (`yieldhunter/db/repository/listings.py`).** Preserves `initial_price`, stores
+   `previous_price` on every history entry, and maintains `price_drop_amount`, `price_drop_pct`, and `price_change_count`.
+3. **Contract extraction & lease-expiry upside (`yieldhunter/db/repository/contracts.py`).** Extracts `current_rent` and
+   `contract_expiry_date` from stored descriptions and computes `current_yield`, `reversion_yield`, `rent_upside_pct`, and
+   `months_to_expiry`.
+4. **Size-curved rental estimates (`yieldhunter/db/repository/estimates.py`).** Weighted-median comparables adjusted along
+   `area^0.30` over active + 60-day recently-rented listings.
+5. **Cross-source deduplication & arbitrage (`yieldhunter/analysis/clustering.py`).** Clusters duplicate ads across
+   Imovirtual, ERA, and Casa Sapo into `listing_clusters` (`price_spread`, `is_cheapest`, `sources`).
+6. **Saved-search deal alerts (`yieldhunter/pipeline/alerts.py`).** Matches new deals and price drops against
+   `saved_searches.filters` and delivers digests via Telegram, Resend, or Webhook (`alert_notifications` dedup).
 
 ## Usage
 
 ```bash
-python3 -m yieldhunter                                  # Imovirtual, buy, all cities (or `python3 main.py`)
-python3 -m yieldhunter --city Porto                     # single city
-python3 -m yieldhunter --source era --type rent         # ERA rentals
-python3 -m yieldhunter --parallel                       # all cities in a thread pool
-python3 -m yieldhunter --type estimates [--city Maia]   # recompute rental estimates / yields
-python3 -m yieldhunter --type contracts [--city Maia]   # extract rent + expiry for rented listings
-python3 -m yieldhunter --type summarize --stats-dir .   # render Markdown run summary
+python3 -m yieldhunter                                    # Imovirtual, buy, all cities
+python3 -m yieldhunter --source casasapo --city Porto     # Casa Sapo buy in Porto
+python3 -m yieldhunter --source era --type rent           # ERA rentals
+python3 -m yieldhunter --type estimates [--city Maia]     # recompute rental estimates + lease upside
+python3 -m yieldhunter --type contracts [--city Maia]     # extract rent/expiry + lease upside
+python3 -m yieldhunter --type clusters  [--city Porto]    # deduplicate multi-agency ads & spreads
+python3 -m yieldhunter --type alerts                      # evaluate saved_searches & send alerts
+python3 -m yieldhunter --type summarize --stats-dir .     # render CI Markdown run summary
 ```
 
 ## Tests & Linting
-
-Docker is required (testcontainers starts an isolated Postgres instance). `DATABASE_URL` does not need to be set.
 
 ```bash
 python3 -m pytest tests/ -v
 python3 -m ruff check --fix . && python3 -m ruff format .
 ```
 
-## GitHub Actions
-
-| Workflow | Trigger | What it does |
-|---|---|---|
-| `scrape.yml` | daily 04:00 UTC + manual (source / type / city inputs) | migrate → buy matrix (source × city) → rent matrix → contracts + estimates → Markdown summary |
-| `test.yml` | pull requests + manual | `alembic upgrade head` on a service DB, then full `pytest tests/ -v` |
-| `migrate.yml` | manual | `alembic upgrade head` on prod |
-
-Required repository secret: `DATABASE_URL`.
-
 ## Schema
 
 | Table | Purpose |
 |---|---|
-| `listings` | Buy listings (PK = source listing id; ERA ids are `era-…`). Includes `is_rented`, `lifetime_rent` |
-| `listing_price_history` / `raw_data` | Buy price change history and latest raw API JSON |
-| `rental_listings` | Rental listings (adds `rent_price_per_m2`) |
-| `rental_listing_price_history` / `rental_raw_data` | Rental price change history and latest raw API JSON |
-| `rental_estimates` | Estimated rent, €/m², sample count, confidence, match level, gross yield per buy listing |
-| `rent_contract_details` | Extracted current rent and contract expiry for tenanted buy listings |
-| `user_favorites`, `user_hidden`, `saved_searches`, `audit_log`, `listing_snapshots` | Frontend user & archival tables |
+| `listings` | Buy listings (`initial_price`, `price_drop_amount`, `price_drop_pct`, `price_change_count`, `is_rented`, `lifetime_rent`) |
+| `listing_price_history` / `raw_data` | Buy price changes (`previous_price`, `price`) and latest raw JSON |
+| `rental_listings` | Rental listings (`rent_price_per_m2` + price-drop signals) |
+| `rental_listing_price_history` / `rental_raw_data` | Rental price changes and latest raw JSON |
+| `rental_estimates` | Size-curved estimated rent, €/m², sample count, confidence, match level, gross yield |
+| `rent_contract_details` | Extracted rent/expiry + `current_yield`, `reversion_yield`, `rent_upside_pct`, `months_to_expiry` |
+| `listing_clusters` | Physical-apartment `cluster_id`, `cluster_size`, `price_spread`, `is_cheapest`, `sources` |
+| `saved_searches` / `alert_notifications` | User saved searches (`filters` JSONB) and sent-alert deduplication log |
+| `user_favorites`, `user_hidden`, `audit_log`, `listing_snapshots` | Frontend user & archival tables |
 
 Full column reference: [docs/DATA_MODEL.md](docs/DATA_MODEL.md).
-
-## Disclaimer
-
-For personal and educational use only. Respect rate limits.

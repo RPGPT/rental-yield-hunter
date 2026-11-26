@@ -39,6 +39,7 @@ from yieldhunter.config import (
 )
 from yieldhunter.db.models import RentalEstimate
 from yieldhunter.db.repository.common import chunks
+from yieldhunter.db.repository.contracts import sync_contract_upside_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -252,5 +253,6 @@ def refresh_rental_estimates(db: Session, city: Optional[str] = None) -> int:
         return 0
 
     count = _upsert_estimates(db, estimates)
+    sync_contract_upside_metrics(db, city=city)
     logger.info("Refreshed rental estimates for %d listings (%s)", count, label)
     return count

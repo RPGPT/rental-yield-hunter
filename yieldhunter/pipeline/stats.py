@@ -110,6 +110,28 @@ def render_job_summary(stats_dir: pathlib.Path) -> str:
         chunks.append("|------|-------------------|\n")
         chunks.append(f"| **Total** | **{total_est}** |\n\n")
 
+    cluster_rows = [r for r in all_rows if r.get("type") == "clusters"]
+    if cluster_rows:
+        chunks.append("### 🔗 Multi-Agency Clusters\n\n")
+        chunks.append("| City | Listings | Multi-Agency Clusters | Duplicate Ads |\n")
+        chunks.append("|------|---------:|----------------------:|--------------:|\n")
+        for r in cluster_rows:
+            chunks.append(
+                f"| {r['city']} | {r.get('listings', 0)} "
+                f"| {r.get('multi_agency_clusters', 0)} | {r.get('duplicate_listings', 0)} |\n"
+            )
+
+    alert_rows = [r for r in all_rows if r.get("type") == "alerts"]
+    if alert_rows:
+        chunks.append("### 🔔 Deal Alerts\n\n")
+        chunks.append("| Searches Matched | Searches Notified | Listings Matched | Sent |\n")
+        chunks.append("|-----------------:|------------------:|-----------------:|-----:|\n")
+        for r in alert_rows:
+            chunks.append(
+                f"| {r.get('searches_matched', 0)} | {r.get('searches_notified', 0)} "
+                f"| {r.get('listings_matched', 0)} | {r.get('notifications_sent', 0)} |\n"
+            )
+
     return "".join(chunks)
 
 

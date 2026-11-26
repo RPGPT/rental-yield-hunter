@@ -12,12 +12,13 @@ on:
       source:
         description: "Source"
         required: true
-        default: "Both"
+        default: "All"
         type: choice
         options:
-          - Both
+          - All
           - Imovirtual
           - ERA
+          - CasaSapo
       scraping_type:
         description: "Scraping type (leave empty to scrape both)"
         required: false
@@ -50,7 +51,6 @@ jobs:
     runs-on: ubuntu-26.04
     timeout-minutes: 5
 
-
     steps:
       - uses: actions/checkout@v6
 
@@ -73,9 +73,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        source: ${{ (inputs.source == 'Imovirtual' && fromJSON('["imovirtual"]')) || (inputs.source == 'ERA' && fromJSON('["era"]')) || fromJSON('["imovirtual","era"]') }}
+        source: ${{ (inputs.source == 'Imovirtual' && fromJSON('["imovirtual"]')) || (inputs.source == 'ERA' && fromJSON('["era"]')) || (inputs.source == 'CasaSapo' && fromJSON('["casasapo"]')) || fromJSON('["imovirtual","era","casasapo"]') }}
         city: ${{ inputs.city != '' && fromJSON(format('["{0}"]', inputs.city)) || fromJSON('["Porto","Matosinhos","Vila Nova de Gaia","Maia","Paços de Ferreira","Penafiel","Paredes","Ermesinde","Alfena"]') }}
-
 
     steps:
       - uses: actions/checkout@v6
@@ -88,8 +87,7 @@ jobs:
       - run: pip install -r requirements.txt
 
       - name: Scrape ${{ matrix.city }} (buy)
-        run: |
-          python main.py --source "${{ matrix.source }}" --city "${{ matrix.city }}" --type buy
+        run: python main.py --source "${{ matrix.source }}" --city "${{ matrix.city }}" --type buy
 
       - name: Upload stats
         if: always()
@@ -109,9 +107,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        source: ${{ (inputs.source == 'Imovirtual' && fromJSON('["imovirtual"]')) || (inputs.source == 'ERA' && fromJSON('["era"]')) || fromJSON('["imovirtual","era"]') }}
+        source: ${{ (inputs.source == 'Imovirtual' && fromJSON('["imovirtual"]')) || (inputs.source == 'ERA' && fromJSON('["era"]')) || (inputs.source == 'CasaSapo' && fromJSON('["casasapo"]')) || fromJSON('["imovirtual","era","casasapo"]') }}
         city: ${{ inputs.city != '' && fromJSON(format('["{0}"]', inputs.city)) || fromJSON('["Porto","Matosinhos","Vila Nova de Gaia","Maia","Paços de Ferreira","Penafiel","Paredes","Ermesinde","Alfena"]') }}
-
 
     steps:
       - uses: actions/checkout@v6
@@ -124,8 +121,7 @@ jobs:
       - run: pip install -r requirements.txt
 
       - name: Scrape ${{ matrix.city }} (rent)
-        run: |
-          python main.py --source "${{ matrix.source }}" --city "${{ matrix.city }}" --type rent
+        run: python main.py --source "${{ matrix.source }}" --city "${{ matrix.city }}" --type rent
 
       - name: Upload stats
         if: always()
@@ -135,27 +131,22 @@ jobs:
           path: stats-*.json
           if-no-files-found: warn
 
-  # ── Extract contract details (after buy + rent) ─────────────────────────────
+  # ── Extract contract details ────────────────────────────────────────────────
   extract-contracts:
     if: ${{ always() && !failure() }}
     needs: [scrape-buy, scrape-rent]
     runs-on: ubuntu-26.04
     timeout-minutes: 30
 
-
     steps:
       - uses: actions/checkout@v6
-
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
-
       - run: pip install -r requirements.txt
-
       - name: Extract contracts (all cities)
         run: python main.py --type contracts
-
       - name: Upload stats
         if: always()
         uses: actions/upload-artifact@v7
@@ -164,27 +155,22 @@ jobs:
           path: stats-*.json
           if-no-files-found: warn
 
-  # ── Calculate rent estimates (after buy + rent, parallel with contracts) ───
+  # ── Calculate rent estimates ────────────────────────────────────────────────
   calculate-estimates:
     if: ${{ always() && !failure() }}
     needs: [scrape-buy, scrape-rent]
     runs-on: ubuntu-26.04
     timeout-minutes: 30
 
-
     steps:
       - uses: actions/checkout@v6
-
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
-
       - run: pip install -r requirements.txt
-
       - name: Calculate rent estimates (all cities)
         run: python main.py --type estimates
-
       - name: Upload stats
         if: always()
         uses: actions/upload-artifact@v7
@@ -193,8 +179,64 @@ jobs:
           path: stats-estimates-*.json
           if-no-files-found: warn
 
+  # ── Cluster duplicate listings & price spreads ──────────────────────────────
+  cluster-listings:
+    if: ${{ always() && !failure() }}
+    needs: [scrape-buy, scrape-rent]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Cluster multi-agency listings
+        run: python main.py --type clusters
+      - name: Upload stats
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: scrape-stats-clusters
+          path: stats-clusters-*.json
+          if-no-files-found: warn
+
+  # ── Send saved-search deal alerts ───────────────────────────────────────────
+  send-alerts:
+    if: ${{ always() && !failure() }}
+    needs: [extract-contracts, calculate-estimates, cluster-listings]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      ALERT_FROM_EMAIL: ${{ secrets.ALERT_FROM_EMAIL }}
+      ALERT_TO_EMAIL: ${{ secrets.ALERT_TO_EMAIL }}
+      ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Dispatch saved-search alerts
+        run: python main.py --type alerts
+      - name: Upload stats
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: scrape-stats-alerts
+          path: stats-alerts*.json
+          if-no-files-found: warn
+
+  # ── Summarise ───────────────────────────────────────────────────────────────
   summarise:
-    needs: [scrape-buy, scrape-rent, extract-contracts, calculate-estimates]
+    needs: [scrape-buy, scrape-rent, extract-contracts, calculate-estimates, cluster-listings, send-alerts]
     if: always()
     runs-on: ubuntu-26.04
 
