@@ -47,7 +47,7 @@ def render_job_summary(stats_dir: pathlib.Path) -> str:
     all_rows = (
         sorted(
             (json.loads(f.read_text(encoding="utf-8")) for f in stats_dir.glob("stats-*.json")),
-            key=lambda r: r.get("city", ""),
+            key=lambda r: r.get("city") or "",
         )
         if stats_dir.exists()
         else []
