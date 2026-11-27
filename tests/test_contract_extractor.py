@@ -252,3 +252,22 @@ class TestExtractRentAndExpiry:
         text = "duas casas t2 arrendadas por 750€ cada uma"
         result = extract_rent_and_expiry(text)
         assert result["current_rent_amount"] == 1500.0
+
+    def test_payment_terms_booking_and_cpcv_not_extracted_as_rent(self):
+        studio_desc = (
+            "Condições de Pagamento: 5.000€ de reserva, 20% no Contrato Promessa de Compra e Venda (CPCV), "
+            "80% na escritura. Ideal para arrendamento de curta ou longa duração. "
+            "Payment Terms: 5,000€ booking, 20% on CPCV."
+        )
+        result = extract_rent_and_expiry(studio_desc)
+        assert result["current_rent_amount"] is None
+
+        cpcv_desc = (
+            "Condições de pagamento: 10.000€ CPCV / Inicio Obra: 10% (- 10 000€), ESTRUTURA 10%, 60% na ESCRITURA."
+        )
+        result2 = extract_rent_and_expiry(cpcv_desc)
+        assert result2["current_rent_amount"] is None
+
+    def test_unanchored_euro_amount_not_extracted(self):
+        result = extract_rent_and_expiry("Valor de IMI anual: 405€. Excelente exposição solar.")
+        assert result["current_rent_amount"] is None

@@ -85,8 +85,13 @@ _COUNT_BEFORE_RE = re.compile(
     r"properties|units?|flats?|houses?)\b",
     re.IGNORECASE,
 )
-_NEG_RIGHT_RE = re.compile(r"/m[²2]|€/m|eur.*m[²2]")
-_NEG_LEFT_RE = re.compile(r"preco\s*por\s*m[²2]|price\s*per\s*m[²2]|condominio|condominium")
+_NEG_RIGHT_RE = re.compile(
+    r"/m[²2]|€/m|eur.*m[²2]|\b(?:de\s+)?(?:reserva|sinal|cpcv|escritura|booking|deposit|imi|condomini[oa])\b"
+)
+_NEG_LEFT_RE = re.compile(
+    r"preco\s*por\s*m[²2]|price\s*per\s*m[²2]|condomini[oa]"
+    r"|\b(?:reserva|sinal|cpcv|escritura|booking|deposit|imi|condicoes\s+de\s+pagamento|payment\s+terms)\b"
+)
 
 _LEAD_PUNCT_RE = re.compile(r"^[\s:.,;]+")
 _CLAUSE_SPLIT_RE = re.compile(r"[.\n]")
@@ -163,8 +168,8 @@ def _score_rent_candidate(amount: float, pos_start: int, pos_end: int, text_lowe
     if not (50 <= amount <= 10_000):
         return 0.0
 
-    tight_right = _strip_accents(text_lower[pos_end : pos_end + 10])
-    tight_left = _strip_accents(text_lower[max(0, pos_start - 30) : pos_start])
+    tight_right = _strip_accents(text_lower[pos_end : pos_end + 30])
+    tight_left = _strip_accents(text_lower[max(0, pos_start - 35) : pos_start])
     if _NEG_RIGHT_RE.search(tight_right) or _NEG_LEFT_RE.search(tight_left):
         return 0.0
 
@@ -172,10 +177,15 @@ def _score_rent_candidate(amount: float, pos_start: int, pos_end: int, text_lowe
     neighbourhood = text_lower[max(0, pos_start - window) : pos_start] + " " + text_lower[pos_end : pos_end + window]
     neighbourhood_norm = _strip_accents(neighbourhood)
 
+    has_monthly = bool(_MONTHLY_WORDS.search(neighbourhood))
+    has_anchor = any(anchor in neighbourhood_norm for anchor in _RENT_ANCHORS)
+    if not has_monthly and not has_anchor:
+        return 0.0
+
     score = 0.1
-    if _MONTHLY_WORDS.search(neighbourhood):
+    if has_monthly:
         score += 0.5
-    if any(anchor in neighbourhood_norm for anchor in _RENT_ANCHORS):
+    if has_anchor:
         score += 0.4
 
     return score
